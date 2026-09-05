@@ -1,0 +1,37 @@
+.gradle/
+.idea/
+.vscode/
+.kotlin/
+.tools/
+**/build/
+local.properties
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+*.hprof
+
+# Local environment and deployment configuration
+.env
+.env.*
+!.env.example
+google-services.json
+service-account*.json
+
+# Signing credentials and generated Android packages
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+*.apk
+*.aab
+*.apks
+*.idsig
