@@ -109,7 +109,9 @@ lost on rebuild; generated APKs and reports remain under `app/build/`.
 Old ignored `.tools/` downloads are no longer used and are not deleted by the
 migration.
 
-GitHub Actions uses the same container and runs:
+GitHub Actions does not use the container. For speed it uses the runner's
+preinstalled Android SDK with Temurin 21 and Gradle caching, and runs the same
+tasks as the local validation command:
 
 ```bash
 ./scripts/android --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -128,8 +130,8 @@ user to group id 46, which is `plugdev` on Debian/Ubuntu hosts. If your host
 uses a different group for Android USB nodes, adjust `--group-add` in
 `.devcontainer/devcontainer.json`. The ADB key is kept in the named Docker
 volume `boatspark-android-adb-keys`, so the phone only needs to approve the
-container once. CI creates an empty `/dev/bus/usb` so the same configuration
-starts on runners without USB.
+container once. The host must provide `/dev/bus/usb`; on a Linux host without
+it, run `sudo mkdir -p /dev/bus/usb` before starting the container.
 
 Run ADB through `./scripts/adb`. Only one ADB server can claim a device, so
 stop ADB on the host or in other containers first. The container has no udev
