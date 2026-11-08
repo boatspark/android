@@ -6,7 +6,7 @@ Native Android client for BoatSpark boat status and alert data.
 
 Builds use the devcontainer approach from
 [`adrianba/android-builder`](https://github.com/adrianba/android-builder).
-The JDK 21 and Android SDK (API 36, build-tools 36.0.0) run inside Docker,
+The JDK 21 and Android SDK (API 37, build-tools 37.0.0) run inside Docker,
 with this checkout bind-mounted so artifacts and reports appear on the host.
 Supported hosts are x86-64 Linux and WSL; ARM64 is not supported.
 

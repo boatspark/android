@@ -24,10 +24,10 @@ exec devcontainer exec --workspace-folder "$repo_root" bash -euo pipefail -c '
     check test -w "$ANDROID_HOME"
     check test -w "$HOME/.gradle"
     check test -w "$HOME/.android"
-    check test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+    check test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
     java -XshowSettings:properties -version 2>&1 | grep -Eq "java.specification.version = 21$"
     java -version
-    "$ANDROID_HOME/build-tools/36.0.0/aapt2" version
+    "$ANDROID_HOME/build-tools/37.0.0/aapt2" version
     sdkmanager --version
     adb version
     printf "Android container checks passed.\n"

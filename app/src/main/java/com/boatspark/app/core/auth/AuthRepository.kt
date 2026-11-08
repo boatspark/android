@@ -2,6 +2,7 @@ package com.boatspark.app.core.auth
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import java.util.concurrent.atomic.AtomicLong
 import com.boatspark.app.core.config.AppConfig
 import java.util.concurrent.atomic.AtomicReference
@@ -40,7 +41,7 @@ class AuthRepository(
 
     suspend fun createAuthorizationIntent(): Intent {
         config.configurationError()?.let { throw IllegalStateException(it) }
-        val serviceConfiguration = discoverConfiguration(Uri.parse(config.oidcIssuer))
+        val serviceConfiguration = discoverConfiguration(config.oidcIssuer.toUri())
         val request = AuthorizationRequest.Builder(
             serviceConfiguration,
             config.oidcClientId,

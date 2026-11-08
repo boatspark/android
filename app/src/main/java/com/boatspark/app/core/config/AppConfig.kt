@@ -1,6 +1,7 @@
 package com.boatspark.app.core.config
 
 import android.net.Uri
+import androidx.core.net.toUri
 import com.boatspark.app.BuildConfig
 
 data class AppConfig(
@@ -10,7 +11,7 @@ data class AppConfig(
     val osmTileUrl: String = BuildConfig.OSM_TILE_URL,
     val seamarkTileUrl: String = BuildConfig.SEAMARK_TILE_URL,
 ) {
-    val redirectUri: Uri = Uri.parse("com.boatspark.app:/oauth2redirect")
+    val redirectUri: Uri = "com.boatspark.app:/oauth2redirect".toUri()
 
     fun configurationError(): String? = when {
         apiBaseUrl.contains("example.com") -> "Set boatspark.apiBaseUrl in local.properties"

@@ -51,12 +51,12 @@ fun configuredValue(name: String, fallback: String): String =
 
 android {
     namespace = "com.boatspark.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.boatspark.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
 
@@ -159,6 +159,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.appauth)
     implementation(libs.maplibre.compose)
+    runtimeOnly(libs.maplibre.compose.runtime.opengl)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test.junit)

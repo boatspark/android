@@ -5,6 +5,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.core.content.edit
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -31,13 +32,17 @@ class EncryptedAuthStateStore(context: Context) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.iv + cipher.doFinal(value.encodeToByteArray())
-        preferences.edit().putString(KEY_STATE, Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
+        preferences.edit {
+            putString(KEY_STATE, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+        }
     }
 
     @SuppressLint("ApplySharedPref")
     fun clear() {
         // Synchronous so a sign-out cannot be lost if the process dies right after.
-        preferences.edit().remove(KEY_STATE).commit()
+        preferences.edit(commit = true) {
+            remove(KEY_STATE)
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {

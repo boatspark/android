@@ -19,22 +19,126 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import com.boatspark.app.BuildConfig
 import com.boatspark.app.core.model.GpsData
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.maplibre.compose.camera.CameraPosition
-import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.camera.CameraUpdate
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.RasterLayer
+import org.maplibre.compose.map.MapRuntime
 import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.map.createMapRuntime
+import org.maplibre.compose.map.rememberMapState
+import org.maplibre.compose.overlay.MapOverlay
+import org.maplibre.compose.overlay.include
+import org.maplibre.compose.resource.MapResourceError
+import org.maplibre.compose.resource.MapResourceKind
+import org.maplibre.compose.resource.MapResourceLoad
+import org.maplibre.compose.resource.MapResourceProvider
 import org.maplibre.compose.sources.GeoJsonData
-import org.maplibre.compose.sources.TileSetOptions
 import org.maplibre.compose.sources.rememberGeoJsonSource
-import org.maplibre.compose.sources.rememberRasterSource
+import org.maplibre.compose.sources.rememberRasterTileSource
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.Point
 import org.maplibre.spatialk.geojson.Position
+import java.time.DateTimeException
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
+import kotlin.time.Instant as MapInstant
+
+// The OpenStreetMap tile policy requires an identifying User-Agent.
+private val mapRuntime: MapRuntime by lazy {
+    val userAgent = "BoatSpark/${BuildConfig.VERSION_NAME} (${BuildConfig.APPLICATION_ID})"
+    val client = OkHttpClient.Builder()
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
+    createMapRuntime {
+        resourceProvider = MapResourceProvider(
+            accepts = { it.kind == MapResourceKind.Tile },
+            load = { request ->
+                val httpRequest = Request.Builder()
+                    .url(request.url)
+                    .header("User-Agent", userAgent)
+                    .apply {
+                        if (request.priorData != null) {
+                            request.priorEtag?.let { header("If-None-Match", it) }
+                            request.priorModified?.let {
+                                val date = DateTimeFormatter.RFC_1123_DATE_TIME.format(
+                                    java.time.Instant.ofEpochMilli(it.toEpochMilliseconds())
+                                        .atZone(ZoneOffset.UTC),
+                                )
+                                header("If-Modified-Since", date)
+                            }
+                        }
+                    }
+                    .build()
+                client.newCall(httpRequest).execute().use { response ->
+                    val modified = response.header("Last-Modified").toMapInstantOrNull()
+                    val expires = response.cacheExpiresAt()
+                    when {
+                        response.code == 304 && request.priorData != null ->
+                            MapResourceLoad.NotModified(modified = modified, expires = expires)
+                        response.code == 204 -> MapResourceLoad.NoContent()
+                        response.isSuccessful -> {
+                            val bytes = response.body?.bytes()
+                            if (bytes == null) {
+                                MapResourceLoad.NoContent()
+                            } else {
+                                MapResourceLoad.Bytes(
+                                    bytes = bytes,
+                                    etag = response.header("ETag"),
+                                    mustRevalidate = response.cacheControl.noCache ||
+                                        response.cacheControl.mustRevalidate,
+                                    modified = modified,
+                                    expires = expires,
+                                )
+                            }
+                        }
+                        else -> MapResourceLoad.Failed(
+                            reason = when {
+                                response.code == 404 -> MapResourceError.NotFound
+                                response.code == 429 -> MapResourceError.RateLimit
+                                response.code in 500..599 -> MapResourceError.Server
+                                else -> MapResourceError.Other
+                            },
+                            message = response.message.ifBlank { "HTTP ${response.code}" },
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+private fun String?.toMapInstantOrNull(): MapInstant? {
+    if (this == null) return null
+    return try {
+        MapInstant.fromEpochMilliseconds(
+            ZonedDateTime.parse(this, DateTimeFormatter.RFC_1123_DATE_TIME)
+                .toInstant()
+                .toEpochMilli(),
+        )
+    } catch (_: DateTimeException) {
+        null
+    }
+}
+
+private fun okhttp3.Response.cacheExpiresAt(): MapInstant? {
+    val maxAgeSeconds = cacheControl.maxAgeSeconds
+    if (maxAgeSeconds != -1) {
+        return MapInstant.fromEpochMilliseconds(
+            System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(maxAgeSeconds.toLong()),
+        )
+    }
+    return header("Expires").toMapInstantOrNull()
+}
 
 @Composable
 fun BoatMap(
@@ -47,30 +151,21 @@ fun BoatMap(
         longitude = gps.longitudeDegrees,
         latitude = gps.latitudeDegrees,
     )
-    val cameraState = rememberCameraState(
-        firstPosition = CameraPosition(target = position, zoom = 13.0),
-    )
-    val mapContent: @Composable () -> Unit = {
-        val osm = rememberRasterSource(
-            tiles = listOf(osmTileUrl),
-            options = TileSetOptions(
-                minZoom = 0,
-                maxZoom = 19,
-                attributionHtml = "© OpenStreetMap contributors",
-            ),
-            tileSize = 256,
-        )
+    val mapState = rememberMapState(
+        runtime = mapRuntime,
+        baseStyle = BaseStyle.Empty,
+        initialCameraPosition = CameraPosition(center = position, zoom = 13.0),
+    ) {
+        val osm = rememberRasterTileSource(tiles = listOf(osmTileUrl), tileSize = 256) {
+            maxZoom = 19
+            attributionHtml = "© OpenStreetMap contributors"
+        }
         RasterLayer(id = "openstreetmap", source = osm)
 
-        val seamarks = rememberRasterSource(
-            tiles = listOf(seamarkTileUrl),
-            options = TileSetOptions(
-                minZoom = 0,
-                maxZoom = 18,
-                attributionHtml = "© OpenSeaMap",
-            ),
-            tileSize = 256,
-        )
+        val seamarks = rememberRasterTileSource(tiles = listOf(seamarkTileUrl), tileSize = 256) {
+            maxZoom = 18
+            attributionHtml = "© OpenSeaMap"
+        }
         RasterLayer(id = "openseamap-seamarks", source = seamarks)
 
         val marker = rememberGeoJsonSource(
@@ -94,16 +189,16 @@ fun BoatMap(
             .height(320.dp),
     ) {
         MaplibreMap(
-            baseStyle = BaseStyle.Empty,
-            cameraState = cameraState,
             modifier = Modifier.fillMaxSize(),
-            content = mapContent,
+            state = mapState,
+            // Attribution is shown in the bar below the map instead of over it.
+            overlay = { include(MapOverlay.None) },
         )
         Button(
             onClick = {
                 coroutineScope.launch {
-                    cameraState.animateTo(
-                        cameraState.position.copy(target = position, zoom = 13.0),
+                    mapState.animateCamera(
+                        CameraUpdate(center = position, zoom = 13.0, bearing = 0.0, pitch = 0.0),
                     )
                 }
             },
