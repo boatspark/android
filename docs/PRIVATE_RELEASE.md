@@ -4,13 +4,30 @@
 
 Create a release keystore outside the repository and protect it as a long-lived
 release credential. Copy `keystore.properties.example` to the ignored
-`keystore.properties` file and provide the absolute keystore path and aliases.
+`keystore.properties` file and provide the container-visible keystore path and aliases.
 Never commit either file or print passwords in CI logs.
+
+An absolute host path is not automatically available inside the container.
+For an external key, add an explicit read-only mount to your local
+`.devcontainer/devcontainer.json`, for example:
+
+```json
+"mounts": [
+  "source=/absolute/host/path/boatspark-release.jks,target=/run/boatspark-release.jks,type=bind,readonly"
+]
+```
+
+Keep this machine-specific edit uncommitted, rebuild the container as described
+in the README, and use `storeFile=/run/boatspark-release.jks` in the ignored
+`keystore.properties`. Ensure the non-root container user can read the key
+without making it world-readable. Do not mount your entire home directory.
+Relative `storeFile` paths are resolved from the `app` module inside the
+container. CI validates debug builds only and does not provision signing keys.
 
 Build and test:
 
 ```bash
-scripts/gradlew-local clean \
+./scripts/android clean \
   :app:testDebugUnitTest \
   :app:lintDebug \
   :app:assembleDebug \
@@ -22,7 +39,7 @@ With signing configured, the release artifact is
 `app/build/outputs/apk/release/app-release.apk`. The build deliberately fails
 without all four signing values so an unsigned APK cannot be mistaken for a
 release. To inspect minification without release credentials, explicitly run
-`scripts/gradlew-local :app:assembleRelease
+`./scripts/android :app:assembleRelease
 -Pboatspark.allowUnsignedRelease=true`; that artifact is named
 `app-release-unsigned.apk` and cannot be installed.
 

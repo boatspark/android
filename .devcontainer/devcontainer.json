@@ -1,0 +1,15 @@
+{
+  "name": "BoatSpark Android",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "vscode",
+  "runArgs": [
+    "--device-cgroup-rule=c 189:* rmw",
+    "--group-add=46"
+  ],
+  "mounts": [
+    "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+    "source=boatspark-android-adb-keys,target=/home/vscode/.android,type=volume"
+  ]
+}

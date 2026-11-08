@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+    printf 'Android builds require an x86-64 Linux or WSL host.\n' >&2
+    exit 1
+fi
+for tool in docker devcontainer; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        printf 'Missing %s. See README.md for devcontainer prerequisites.\n' "$tool" >&2
+        exit 1
+    fi
+done
+if [[ ! -x "$repo_root/gradlew" ]]; then
+    printf 'The Gradle wrapper must be executable: %s/gradlew\n' "$repo_root" >&2
+    exit 1
+fi
+
+devcontainer up --workspace-folder "$repo_root" >/dev/null
+
+exec devcontainer exec --workspace-folder "$repo_root" ./gradlew "$@"

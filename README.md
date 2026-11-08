@@ -4,20 +4,31 @@ Native Android client for BoatSpark boat status and alert data.
 
 ## Local setup
 
-The project keeps its JDK and Android SDK under the ignored `.tools/`
-directory. On Linux ARM64 and x86-64, bootstrap them and run Gradle through the
-local wrapper:
+Builds use the devcontainer approach from
+[`adrianba/android-builder`](https://github.com/adrianba/android-builder).
+The JDK 21 and Android SDK (API 36, build-tools 36.0.0) run inside Docker,
+with this checkout bind-mounted so artifacts and reports appear on the host.
+Supported hosts are x86-64 Linux and WSL; ARM64 is not supported.
+
+Install Docker CE and Node.js/npm on the host, ensure `docker info` succeeds,
+and install the pinned devcontainer CLI:
 
 ```bash
-scripts/bootstrap-toolchain
-scripts/gradlew-local :app:assembleDebug
+npm install --global @devcontainers/cli@0.90.0
+./scripts/check-android-env
+./scripts/android --no-daemon :app:assembleDebug
 ```
 
-The wrapper ensures the local toolchain and ARM64 build compatibility are
-configured consistently.
+The first invocation builds and starts the container; later invocations reuse
+it. The wrapper works from any directory and returns Gradle's exit status.
+No host JDK, Android SDK, or Gradle installation is needed. In WSL, keep the
+checkout in the Linux filesystem rather than under `/mnt/c`.
 
 Copy `local.properties.example` to `local.properties`, then replace the API,
-Pocket ID issuer, and public OIDC client ID values. The Pocket ID client must be
+Pocket ID issuer, and public OIDC client ID values. When migrating an existing
+`local.properties`, remove any `sdk.dir` entry pointing to the old host SDK;
+leave application settings intact. The container supplies `ANDROID_HOME`.
+The Pocket ID client must be
 registered as a public native client with this exact callback URI:
 
 ```text
@@ -30,18 +41,28 @@ secret in the app.
 Common commands:
 
 ```bash
-scripts/gradlew-local :app:assembleDebug
-scripts/gradlew-local :app:testDebugUnitTest
-scripts/gradlew-local :app:lintDebug
+./scripts/android :app:assembleDebug
+./scripts/android :app:testDebugUnitTest
+./scripts/android :app:lintDebug
 ```
 
 Compose and Room instrumentation tests are packaged with:
 
 ```bash
-scripts/gradlew-local :app:assembleDebugAndroidTest
+./scripts/android :app:assembleDebugAndroidTest
 ```
 
-They require a connected physical device or emulator to execute. See
+They require a connected physical device or emulator to execute. A USB
+device attached to the host can be used from the container (see
+[Physical devices](#physical-devices)):
+
+```bash
+./scripts/adb devices
+./scripts/android :app:connectedDebugAndroidTest
+./scripts/adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+See
 [`docs/PRIVATE_RELEASE.md`](docs/PRIVATE_RELEASE.md) for signing and private
 distribution, and [`docs/PUSH_NOTIFICATIONS.md`](docs/PUSH_NOTIFICATIONS.md)
 for the future true-push design.
@@ -72,14 +93,50 @@ BoatSpark source code and documentation are available under the
 brand artwork are excluded from that license; see
 [`BRANDING.md`](BRANDING.md).
 
-## Global installation
+## Container maintenance and CI
 
-No global JDK, Android SDK, or Gradle installation is required for
-command-line builds. The bootstrap script expects standard host utilities:
-`bash`, `curl`, `tar`, and `unzip`.
+After changing `.devcontainer/Dockerfile` or container configuration, rebuild:
 
-On ARM64 Linux, Google's current `aapt2` is x86-64. The script additionally
-requires `cc`, `apt`, and `dpkg-deb`; it downloads QEMU and the required x86
-runtime into `.tools/`, then builds a small local launcher. Nothing is installed
-system-wide. An Android emulator may require host-level virtualization/KVM
-configuration; a physical device avoids that host change.
+```bash
+devcontainer up --workspace-folder . --remove-existing-container
+./scripts/check-android-env
+```
+
+The Java base image is digest-pinned and the Android command-line tools archive
+is version-pinned and SHA-256 verified. Update these pins deliberately alongside
+the environment checks. The Gradle cache lives inside the container and may be
+lost on rebuild; generated APKs and reports remain under `app/build/`.
+Old ignored `.tools/` downloads are no longer used and are not deleted by the
+migration.
+
+GitHub Actions uses the same container and runs:
+
+```bash
+./scripts/android --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+Copilot CLI runs on the host; repository instructions direct builds into the
+container. Copilot authentication remains on the host and the container does
+not need a Docker socket mount. This configuration does not install or start
+an emulator; accelerated emulators would need host KVM configuration.
+
+### Physical devices
+
+The devcontainer bind-mounts the host `/dev/bus/usb`, allows USB character
+devices (`--device-cgroup-rule=c 189:* rmw`) and adds the non-root `vscode`
+user to group id 46, which is `plugdev` on Debian/Ubuntu hosts. If your host
+uses a different group for Android USB nodes, adjust `--group-add` in
+`.devcontainer/devcontainer.json`. The ADB key is kept in the named Docker
+volume `boatspark-android-adb-keys`, so the phone only needs to approve the
+container once. CI creates an empty `/dev/bus/usb` so the same configuration
+starts on runners without USB.
+
+Run ADB through `./scripts/adb`. Only one ADB server can claim a device, so
+stop ADB on the host or in other containers first. The container has no udev
+and does not notice hotplug; after replugging the phone run:
+
+```bash
+./scripts/adb kill-server && ./scripts/adb start-server && ./scripts/adb devices
+```
+
+`connectedDebugAndroidTest` uninstalls the app when it finishes.

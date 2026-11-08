@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+    printf 'Android builds require an x86-64 Linux or WSL host.\n' >&2
+    exit 1
+fi
+for tool in docker devcontainer; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        printf 'Missing %s. See README.md for devcontainer prerequisites.\n' "$tool" >&2
+        exit 1
+    fi
+done
+
+devcontainer up --workspace-folder "$repo_root" >/dev/null
+
+exec devcontainer exec --workspace-folder "$repo_root" bash -euo pipefail -c '
+    test "$(uname -m)" = x86_64
+    test "$(id -u)" -ne 0
+    test -w .
+    test -w "$ANDROID_HOME"
+    test -w "$HOME/.gradle"
+    test -w "$HOME/.android"
+    test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+    java -XshowSettings:properties -version 2>&1 | grep -Eq "java.specification.version = 21$"
+    java -version
+    "$ANDROID_HOME/build-tools/36.0.0/aapt2" version
+    sdkmanager --version
+    adb version
+    printf "Android container checks passed.\n"
+'

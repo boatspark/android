@@ -1,5 +1,4 @@
 # Copy to local.properties and replace values for a live environment.
-sdk.dir=.tools/android-sdk
 boatspark.apiBaseUrl=https://boatspark.example.com/
 boatspark.oidcIssuer=https://id.example.com/
 boatspark.oidcClientId=replace-with-pocket-id-client-id
