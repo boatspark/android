@@ -122,13 +122,14 @@ fun BoatStatusScreen(
 
         if (status.beacons.isNotEmpty() || status.missingBeacons.isNotEmpty()) {
             item { Text("Sensors", style = MaterialTheme.typography.titleLarge) }
-            status.beacons.forEach { beacon ->
-                item(key = "beacon-${beacon.beaconId}") {
+            // The API doesn't guarantee unique beacon IDs, so the position keeps keys unique.
+            status.beacons.forEachIndexed { index, beacon ->
+                item(key = "beacon-$index-${beacon.beaconId}") {
                     BeaconCard(beacon, subtitle = "Current")
                 }
             }
-            status.missingBeacons.forEach { missing ->
-                item(key = "missing-${missing.beacon.beaconId}") {
+            status.missingBeacons.forEachIndexed { index, missing ->
+                item(key = "missing-$index-${missing.beacon.beaconId}") {
                     BeaconCard(
                         missing.beacon,
                         subtitle = "Last seen ${formatTimestamp(missing.publishedAt)}",
