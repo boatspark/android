@@ -17,13 +17,14 @@ done
 devcontainer up --workspace-folder "$repo_root" >/dev/null
 
 exec devcontainer exec --workspace-folder "$repo_root" bash -euo pipefail -c '
-    test "$(uname -m)" = x86_64
-    test "$(id -u)" -ne 0
-    test -w .
-    test -w "$ANDROID_HOME"
-    test -w "$HOME/.gradle"
-    test -w "$HOME/.android"
-    test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+    check() { "$@" || { printf "Android container check failed: %s\n" "$*" >&2; exit 1; }; }
+    check test "$(uname -m)" = x86_64
+    check test "$(id -u)" -ne 0
+    check test -w .
+    check test -w "$ANDROID_HOME"
+    check test -w "$HOME/.gradle"
+    check test -w "$HOME/.android"
+    check test -f "$ANDROID_HOME/platforms/android-36/android.jar"
     java -XshowSettings:properties -version 2>&1 | grep -Eq "java.specification.version = 21$"
     java -version
     "$ANDROID_HOME/build-tools/36.0.0/aapt2" version

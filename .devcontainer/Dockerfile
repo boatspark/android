@@ -26,6 +26,11 @@ RUN sdkmanager \
       "platforms;android-${ANDROID_API}" \
       "build-tools;${ANDROID_BUILD_TOOLS}" \
     && mkdir -p /home/vscode/.gradle /home/vscode/.android \
-    && chown -R vscode:vscode "${ANDROID_HOME}" /home/vscode/.gradle /home/vscode/.android
+    && chown -R vscode:vscode /home/vscode/.gradle /home/vscode/.android \
+    && groupadd --system android-sdk \
+    && usermod -aG android-sdk vscode \
+    && chown -R vscode:android-sdk "${ANDROID_HOME}" \
+    && chmod -R g+rwX "${ANDROID_HOME}" \
+    && find "${ANDROID_HOME}" -type d -exec chmod g+s {} +
 
 USER vscode
