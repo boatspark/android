@@ -153,7 +153,7 @@ private fun BeaconCard(
     StatusCard(beacon.beaconName) {
         Text(subtitle, style = MaterialTheme.typography.bodySmall)
         ValueRow("Temperature", formatTemperature(beacon.temperatureCelsius, temperatureUnit))
-        ValueRow("Humidity", "${formatDecimal(beacon.humidityPercent, 2)}%")
+        ValueRow("Humidity", "${formatDecimal(beacon.humidityPercent, 0)}%")
         ValueRow("Battery", "${beacon.batteryPercentage}%")
         ValueRow("Signal", "${beacon.rssi} dBm")
     }

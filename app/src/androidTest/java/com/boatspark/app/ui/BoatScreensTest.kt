@@ -103,6 +103,7 @@ class BoatScreensTest {
         }
 
         composeRule.onNodeWithText("72.5 °F").assertIsDisplayed()
+        composeRule.onNodeWithText("55%").assertIsDisplayed()
         unit = TemperatureUnit.Celsius
         composeRule.onNodeWithText("22.5 °C").assertIsDisplayed()
     }
