@@ -9,6 +9,7 @@ import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.boatspark.app.core.auth.SignInCancelledException
 import com.boatspark.app.ui.BoatSparkApp
 import com.boatspark.app.ui.theme.BoatSparkTheme
 import kotlinx.coroutines.launch
@@ -22,7 +23,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         result.data?.let(viewModel::completeSignIn)
-            ?: viewModel.showMessage("Sign-in was cancelled")
+            ?: viewModel.showMessage(SignInCancelledException.MESSAGE)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

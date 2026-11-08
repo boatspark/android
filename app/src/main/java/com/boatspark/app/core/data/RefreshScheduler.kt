@@ -13,7 +13,9 @@ class RefreshScheduler(context: Context) {
     private val workManager = WorkManager.getInstance(context)
 
     fun schedule() {
+        // The foreground refresh already runs at sign-in, so delay the first background run.
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
+            .setInitialDelay(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)

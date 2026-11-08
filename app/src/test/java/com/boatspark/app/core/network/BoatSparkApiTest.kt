@@ -6,7 +6,6 @@ import java.util.concurrent.Executors
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,7 +20,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 class BoatSparkApiTest {
     private lateinit var server: MockWebServer
     private lateinit var api: BoatSparkApi
-    private val json = Json { explicitNulls = false }
+    private val json = BoatSparkJson
 
     @Before
     fun setUp() {
@@ -65,6 +64,19 @@ class BoatSparkApiTest {
 
         assertEquals(7, response.boatId)
         assertEquals("/api/v1/boats/7/status", server.takeRequest().path)
+    }
+
+    @Test
+    fun `boat list response with unknown fields is accepted`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"boats":[{"id":1,"name":"Sea Breeze","device_identifier":"abc","created_at":"2026-01-01T00:00:00Z","new_field":true}],"total":1}""",
+            ),
+        )
+
+        val response = api.boats()
+
+        assertEquals("Sea Breeze", response.boats.single().name)
     }
 
     @Test

@@ -5,12 +5,10 @@ import android.net.Uri
 import java.util.concurrent.atomic.AtomicLong
 import com.boatspark.app.core.config.AppConfig
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
@@ -58,6 +56,9 @@ class AuthRepository(
         val generation = sessionGeneration.get()
         val response = AuthorizationResponse.fromIntent(data)
         val authorizationError = AuthorizationException.fromIntent(data)
+        if (authorizationError.isUserCancellation()) {
+            throw SignInCancelledException()
+        }
         if (response == null) {
             throw authorizationError ?: IllegalStateException("Pocket ID did not return an authorization response")
         }
@@ -71,7 +72,9 @@ class AuthRepository(
         persist(state)
         mutableState.value = AuthenticationState.SignedIn
     }.onFailure {
-        mutableState.value = AuthenticationState.Error(it.message ?: "Sign-in failed")
+        if (it !is SignInCancelledException) {
+            mutableState.value = AuthenticationState.Error(it.message ?: "Sign-in failed")
+        }
     }
 
     suspend fun freshAccessToken(): String = suspendCancellableCoroutine { continuation ->
@@ -160,3 +163,14 @@ class AuthRepository(
 }
 
 class AuthenticationRequiredException : Exception("Authentication is required")
+
+class SignInCancelledException : Exception(MESSAGE) {
+    companion object {
+        const val MESSAGE = "Sign-in was cancelled"
+    }
+}
+
+private fun AuthorizationException?.isUserCancellation(): Boolean =
+    this != null &&
+        type == AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW.type &&
+        code == AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW.code

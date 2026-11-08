@@ -2,11 +2,11 @@ package com.boatspark.app.core.model
 
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlinx.serialization.json.Json
+import com.boatspark.app.core.network.BoatSparkJson
 import org.junit.Test
 
 class ApiModelsTest {
-    private val json = Json { ignoreUnknownKeys = false }
+    private val json = BoatSparkJson
 
     @Test
     fun `status schema includes last GPS and missing beacons`() {
@@ -62,6 +62,40 @@ class ApiModelsTest {
         assertEquals(1.5, status.lastGps?.gps?.pdopValue)
         assertEquals(22.5, status.missingBeacons.single().beacon.temperatureCelsius)
         assertEquals(55.0, status.missingBeacons.single().beacon.humidityPercent)
+    }
+
+    @Test
+    fun `unknown fields added by the server are ignored`() {
+        val status = json.decodeFromString<BoatStatus>(
+            """
+            {
+              "boat_id": 1,
+              "boat_name": "Sea Breeze",
+              "new_top_level_field": {"nested": [1, 2]},
+              "published_at": null,
+              "firmware_version": null,
+              "gps": null,
+              "gps_no_fix": false,
+              "last_gps": null,
+              "gpio": null,
+              "system": null,
+              "beacons": [{
+                "beacon_id": 3,
+                "beacon_name": "Cabin",
+                "rssi": -65,
+                "temperature": 2250,
+                "humidity": 5500,
+                "battery_percentage": 95,
+                "battery_voltage": 3000,
+                "new_beacon_field": "value"
+              }],
+              "missing_beacons": []
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Sea Breeze", status.boatName)
+        assertEquals("Cabin", status.beacons.single().beaconName)
     }
 
     @Test

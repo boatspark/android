@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.boatspark.app.core.auth.AuthenticationRequiredException
 import com.boatspark.app.core.auth.AuthenticationState
-import com.boatspark.app.core.data.BoatRepository
 import com.boatspark.app.core.data.CachedValue
 import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatAlerts

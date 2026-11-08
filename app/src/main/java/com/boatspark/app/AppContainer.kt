@@ -10,8 +10,8 @@ import com.boatspark.app.core.data.RefreshScheduler
 import com.boatspark.app.core.database.BoatSparkDatabase
 import com.boatspark.app.core.network.AccessTokenInterceptor
 import com.boatspark.app.core.network.BoatSparkApi
+import com.boatspark.app.core.network.BoatSparkJson
 import java.util.concurrent.TimeUnit
-import kotlinx.serialization.json.Json
 import net.openid.appauth.AuthorizationService
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,10 +21,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 class AppContainer(context: Context) {
     val config = AppConfig()
-    val json = Json {
-        ignoreUnknownKeys = false
-        explicitNulls = false
-    }
+    val json = BoatSparkJson
     val authRepository = AuthRepository(
         config,
         AuthorizationService(context),
