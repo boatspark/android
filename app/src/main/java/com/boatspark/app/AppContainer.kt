@@ -38,7 +38,7 @@ class AppContainer(context: Context) {
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor(AccessTokenInterceptor(authRepository))
+        .addInterceptor(AccessTokenInterceptor(authRepository::freshAccessToken))
         .addInterceptor(
             HttpLoggingInterceptor().apply {
                 redactHeader("Authorization")

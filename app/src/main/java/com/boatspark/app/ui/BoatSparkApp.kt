@@ -95,10 +95,12 @@ fun BoatSparkApp(
                     .padding(top = 72.dp),
             )
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        if (authentication != AuthenticationState.SignedIn) {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
     }
 }
 
@@ -130,6 +132,7 @@ private fun AuthenticatedApp(
             modifier = Modifier.padding(padding),
         ) {
             composable(ROUTE_BOATS) {
+                LaunchedEffect(Unit) { viewModel.clearSelectedBoat() }
                 BoatListScreen(
                     boats = boats,
                     onBoatSelected = { boatId ->
@@ -158,6 +161,7 @@ private fun AuthenticatedApp(
                 AlertsScreen(cachedAlerts = alerts)
             }
             composable(ROUTE_PROFILE) {
+                LaunchedEffect(Unit) { viewModel.clearSelectedBoat() }
                 ProfileScreen(
                     profile = profile,
                     version = BuildConfig.VERSION_NAME,

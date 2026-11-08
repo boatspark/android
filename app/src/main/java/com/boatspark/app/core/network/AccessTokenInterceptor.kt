@@ -1,15 +1,23 @@
 package com.boatspark.app.core.network
 
-import com.boatspark.app.core.auth.AuthRepository
+import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 
 class AccessTokenInterceptor(
-    private val authRepository: AuthRepository,
+    private val accessToken: suspend () -> String,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = runBlocking { authRepository.freshAccessToken() }
+        // OkHttp rethrows non-IOExceptions from interceptors on its dispatcher
+        // thread, crashing the app, so auth failures travel as an IOException.
+        val token = try {
+            runBlocking { accessToken() }
+        } catch (error: IOException) {
+            throw error
+        } catch (error: Exception) {
+            throw AccessTokenUnavailableException(error)
+        }
         return chain.proceed(
             chain.request().newBuilder()
                 .header("Authorization", "Bearer $token")
@@ -17,3 +25,7 @@ class AccessTokenInterceptor(
         )
     }
 }
+
+class AccessTokenUnavailableException(
+    override val cause: Exception,
+) : IOException(cause.message, cause)

@@ -1,11 +1,15 @@
 package com.boatspark.app.core.network
 
+import com.boatspark.app.core.auth.AuthenticationRequiredException
 import com.boatspark.app.core.model.BoatStatus
+import java.util.concurrent.Executors
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -85,6 +89,36 @@ class BoatSparkApiTest {
         assertFailsWith<ApiFailure.InvalidResponse> {
             apiCall<BoatStatus>(json) { api.status(9) }
         }
+    }
+
+    @Test
+    fun `missing access token surfaces the auth failure without reaching the server`() = runTest {
+        val uncaught = mutableListOf<Throwable>()
+        val authenticatedApi = Retrofit.Builder()
+            .baseUrl(server.url("/"))
+            .client(
+                OkHttpClient.Builder()
+                    .dispatcher(
+                        Dispatcher(
+                            Executors.newSingleThreadExecutor { runnable ->
+                                Thread(runnable).apply {
+                                    setUncaughtExceptionHandler { _, error -> uncaught += error }
+                                }
+                            },
+                        ),
+                    )
+                    .addInterceptor(AccessTokenInterceptor { throw AuthenticationRequiredException() })
+                    .build(),
+            )
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(BoatSparkApi::class.java)
+
+        assertFailsWith<AuthenticationRequiredException> {
+            apiCall<BoatStatus>(json) { authenticatedApi.status(10) }
+        }
+        assertEquals(0, server.requestCount)
+        assertEquals(emptyList(), uncaught)
     }
 }
 

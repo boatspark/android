@@ -1,5 +1,6 @@
 package com.boatspark.app.core.auth
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -33,8 +34,10 @@ class EncryptedAuthStateStore(context: Context) {
         preferences.edit().putString(KEY_STATE, Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
     }
 
+    @SuppressLint("ApplySharedPref")
     fun clear() {
-        preferences.edit().remove(KEY_STATE).apply()
+        // Synchronous so a sign-out cannot be lost if the process dies right after.
+        preferences.edit().remove(KEY_STATE).commit()
     }
 
     private fun getOrCreateKey(): SecretKey {

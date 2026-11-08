@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.boatspark.app.core.auth.AuthenticationRequiredException
 import com.boatspark.app.core.auth.AuthenticationState
 import com.boatspark.app.core.data.BoatRepository
 import com.boatspark.app.core.data.CachedValue
@@ -87,6 +88,10 @@ class MainViewModel(
         refresh()
     }
 
+    fun clearSelectedBoat() {
+        selectedBoatId.value = null
+    }
+
     fun refresh() {
         viewModelScope.launch { refreshNow() }
     }
@@ -127,6 +132,8 @@ class MainViewModel(
             mutableUiState.value = mutableUiState.value.copy(isRefreshing = false)
         } catch (error: CancellationException) {
             throw error
+        } catch (_: AuthenticationRequiredException) {
+            mutableUiState.value = MainUiState()
         } catch (error: Exception) {
             mutableUiState.value = MainUiState(message = error.message ?: "Refresh failed")
         }

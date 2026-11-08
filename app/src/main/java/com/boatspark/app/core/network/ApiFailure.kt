@@ -28,6 +28,8 @@ suspend fun <T> apiCall(json: Json, block: suspend () -> T): T = try {
         in 500..599 -> ApiFailure.Server(detail)
         else -> ApiFailure.Server(detail)
     }
+} catch (error: AccessTokenUnavailableException) {
+    throw error.cause
 } catch (error: IOException) {
     throw ApiFailure.Connectivity(error)
 } catch (error: SerializationException) {
