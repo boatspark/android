@@ -1,5 +1,6 @@
 package com.boatspark.app.core.model
 
+import com.boatspark.app.core.settings.TemperatureUnit
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -8,6 +9,11 @@ import java.util.Locale
 
 fun formatDecimal(value: Double, decimals: Int = 1): String =
     String.format(Locale.getDefault(), "%.${decimals}f", value)
+
+fun formatTemperature(celsius: Double, unit: TemperatureUnit): String = when (unit) {
+    TemperatureUnit.Fahrenheit -> "${formatDecimal(celsius * 9 / 5 + 32)} °F"
+    TemperatureUnit.Celsius -> "${formatDecimal(celsius)} °C"
+}
 
 fun formatTimestamp(value: String?): String {
     if (value == null) return "Unavailable"

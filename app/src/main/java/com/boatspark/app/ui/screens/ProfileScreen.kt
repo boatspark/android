@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -20,6 +21,7 @@ import java.time.Instant
 fun ProfileScreen(
     profile: CachedValue<UserProfile>?,
     version: String,
+    onSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Column(
@@ -50,7 +52,10 @@ fun ProfileScreen(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 24.dp),
         )
-        Button(onClick = onLogout, modifier = Modifier.padding(top = 32.dp)) {
+        OutlinedButton(onClick = onSettings, modifier = Modifier.padding(top = 32.dp)) {
+            Text("Settings")
+        }
+        Button(onClick = onLogout, modifier = Modifier.padding(top = 16.dp)) {
             Text("Sign out")
         }
     }

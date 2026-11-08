@@ -45,12 +45,14 @@ import com.boatspark.app.ui.screens.AlertsScreen
 import com.boatspark.app.ui.screens.BoatListScreen
 import com.boatspark.app.ui.screens.BoatStatusScreen
 import com.boatspark.app.ui.screens.ProfileScreen
+import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
 
 private const val ROUTE_BOATS = "boats"
 private const val ROUTE_PROFILE = "profile"
 private const val ROUTE_STATUS = "status/{boatId}"
 private const val ROUTE_ALERTS = "alerts/{boatId}"
+private const val ROUTE_SETTINGS = "settings"
 
 @Composable
 fun BoatSparkApp(
@@ -118,6 +120,7 @@ private fun AuthenticatedApp(
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
+    val temperatureUnit by viewModel.temperatureUnit.collectAsStateWithLifecycle()
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -153,6 +156,7 @@ private fun AuthenticatedApp(
                     cachedStatus = status,
                     osmTileUrl = BuildConfig.OSM_TILE_URL,
                     seamarkTileUrl = BuildConfig.SEAMARK_TILE_URL,
+                    temperatureUnit = temperatureUnit,
                     onAlerts = { boatId -> navController.navigate("alerts/$boatId") },
                 )
             }
@@ -168,7 +172,14 @@ private fun AuthenticatedApp(
                 ProfileScreen(
                     profile = profile,
                     version = BuildConfig.VERSION_NAME,
+                    onSettings = { navController.navigate(ROUTE_SETTINGS) },
                     onLogout = viewModel::logout,
+                )
+            }
+            composable(ROUTE_SETTINGS) {
+                SettingsScreen(
+                    temperatureUnit = temperatureUnit,
+                    onTemperatureUnitChange = viewModel::setTemperatureUnit,
                 )
             }
         }

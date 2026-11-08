@@ -20,8 +20,10 @@ import com.boatspark.app.core.model.BeaconReading
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.binaryStatus
 import com.boatspark.app.core.model.formatDecimal
+import com.boatspark.app.core.model.formatTemperature
 import com.boatspark.app.core.model.formatTimestamp
 import com.boatspark.app.core.model.powerSource
+import com.boatspark.app.core.settings.TemperatureUnit
 import com.boatspark.app.ui.EmptyState
 import com.boatspark.app.ui.SectionHeader
 import java.time.Instant
@@ -31,6 +33,7 @@ fun BoatStatusScreen(
     cachedStatus: CachedValue<BoatStatus>?,
     osmTileUrl: String,
     seamarkTileUrl: String,
+    temperatureUnit: TemperatureUnit,
     onAlerts: (Long) -> Unit,
 ) {
     val status = cachedStatus?.value
@@ -125,7 +128,7 @@ fun BoatStatusScreen(
             // The API doesn't guarantee unique beacon IDs, so the position keeps keys unique.
             status.beacons.forEachIndexed { index, beacon ->
                 item(key = "beacon-$index-${beacon.beaconId}") {
-                    BeaconCard(beacon, subtitle = "Current")
+                    BeaconCard(beacon, subtitle = "Current", temperatureUnit = temperatureUnit)
                 }
             }
             status.missingBeacons.forEachIndexed { index, missing ->
@@ -133,6 +136,7 @@ fun BoatStatusScreen(
                     BeaconCard(
                         missing.beacon,
                         subtitle = "Last seen ${formatTimestamp(missing.publishedAt)}",
+                        temperatureUnit = temperatureUnit,
                     )
                 }
             }
@@ -141,10 +145,14 @@ fun BoatStatusScreen(
 }
 
 @Composable
-private fun BeaconCard(beacon: BeaconReading, subtitle: String) {
+private fun BeaconCard(
+    beacon: BeaconReading,
+    subtitle: String,
+    temperatureUnit: TemperatureUnit,
+) {
     StatusCard(beacon.beaconName) {
         Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        ValueRow("Temperature", "${formatDecimal(beacon.temperatureCelsius, 2)} °C")
+        ValueRow("Temperature", formatTemperature(beacon.temperatureCelsius, temperatureUnit))
         ValueRow("Humidity", "${formatDecimal(beacon.humidityPercent, 2)}%")
         ValueRow("Battery", "${beacon.batteryPercentage}%")
         ValueRow("Signal", "${beacon.rssi} dBm")

@@ -11,6 +11,7 @@ import com.boatspark.app.core.database.BoatSparkDatabase
 import com.boatspark.app.core.network.AccessTokenInterceptor
 import com.boatspark.app.core.network.BoatSparkApi
 import com.boatspark.app.core.network.BoatSparkJson
+import com.boatspark.app.core.settings.SettingsRepository
 import java.util.concurrent.TimeUnit
 import net.openid.appauth.AuthorizationService
 import okhttp3.MediaType.Companion.toMediaType
@@ -61,5 +62,6 @@ class AppContainer(context: Context) {
         authRepository::markSessionExpired,
     )
     val refreshScheduler = RefreshScheduler(context)
+    val settingsRepository = SettingsRepository(context)
 }
 

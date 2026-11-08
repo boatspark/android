@@ -11,6 +11,8 @@ import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatAlerts
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.UserProfile
+import com.boatspark.app.core.settings.SettingsRepository
+import com.boatspark.app.core.settings.TemperatureUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -46,6 +48,9 @@ class MainViewModel(
     val alerts: StateFlow<CachedValue<BoatAlerts>?> = selectedBoatId
         .flatMapLatest { id -> id?.let(container.boatRepository::alerts) ?: flowOf(null) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val temperatureUnit: StateFlow<TemperatureUnit> = container.settingsRepository.temperatureUnit
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_TEMPERATURE_UNIT)
 
     private val mutableUiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = mutableUiState.asStateFlow()
@@ -106,6 +111,12 @@ class MainViewModel(
 
     fun logout() {
         container.authRepository.clear()
+        // Only an explicit sign-out resets settings; session expiry keeps them.
+        viewModelScope.launch { container.settingsRepository.reset() }
+    }
+
+    fun setTemperatureUnit(unit: TemperatureUnit) {
+        viewModelScope.launch { container.settingsRepository.setTemperatureUnit(unit) }
     }
 
     fun showMessage(message: String) {
