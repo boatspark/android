@@ -48,9 +48,9 @@ import com.boatspark.app.ui.screens.ProfileScreen
 import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
 
-private const val ROUTE_BOATS = "boats"
+internal const val ROUTE_BOATS = "boats"
 private const val ROUTE_PROFILE = "profile"
-private const val ROUTE_STATUS = "status/{boatId}"
+internal const val ROUTE_STATUS = "status/{boatId}"
 private const val ROUTE_ALERTS = "alerts/{boatId}"
 private const val ROUTE_SETTINGS = "settings"
 
@@ -121,6 +121,7 @@ private fun AuthenticatedApp(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val temperatureUnit by viewModel.temperatureUnit.collectAsStateWithLifecycle()
+    SingleBoatHome(navController, boatIds = boats.map { it.value.id })
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -186,6 +187,30 @@ private fun AuthenticatedApp(
     }
 }
 
+/**
+ * With a single boat the list adds nothing, so that boat's status becomes the home screen.
+ * If more boats appear later, the list is restored once the user is back on that home screen.
+ */
+@Composable
+internal fun SingleBoatHome(navController: NavHostController, boatIds: List<Long>) {
+    val currentEntry by navController.currentBackStackEntryAsState()
+    val onlyBoatId = boatIds.singleOrNull()
+    val hasMultipleBoats = boatIds.size > 1
+    LaunchedEffect(onlyBoatId, hasMultipleBoats, currentEntry) {
+        val route = currentEntry?.destination?.route ?: return@LaunchedEffect
+        when {
+            onlyBoatId != null && route == ROUTE_BOATS ->
+                navController.navigate("status/$onlyBoatId") {
+                    popUpTo(ROUTE_BOATS) { inclusive = true }
+                }
+            hasMultipleBoats && route == ROUTE_STATUS && navController.previousBackStackEntry == null ->
+                navController.navigate(ROUTE_BOATS) {
+                    popUpTo(navController.graph.id) { inclusive = true }
+                }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppTopBar(
@@ -194,7 +219,7 @@ private fun AppTopBar(
     onProfile: () -> Unit,
 ) {
     val currentEntry by navController.currentBackStackEntryAsState()
-    val canGoBack = currentEntry?.destination?.route != ROUTE_BOATS
+    val canGoBack = currentEntry != null && navController.previousBackStackEntry != null
     TopAppBar(
         title = { Text("BoatSpark") },
         navigationIcon = {
