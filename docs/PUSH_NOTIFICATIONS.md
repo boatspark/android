@@ -17,6 +17,6 @@ Android work:
 6. Test duplicate delivery, delayed/out-of-order delivery, token expiration,
    user removal, inactive accounts, and a signed-out device.
 
-Do not add a client-side timer that imitates push. WorkManager's 15-minute
-periodic interval is inexact and is intended only to refresh the offline cache.
+Do not add a client-side timer that imitates push. WorkManager's hourly
+periodic refresh is inexact and is intended only to refresh the offline cache.
 
