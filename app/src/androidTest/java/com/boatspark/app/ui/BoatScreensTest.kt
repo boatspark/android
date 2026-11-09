@@ -1,8 +1,11 @@
 package com.boatspark.app.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -19,6 +22,8 @@ import com.boatspark.app.core.model.BoatHistory
 import com.boatspark.app.core.model.LastBeaconReading
 import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatStatus
+import com.boatspark.app.core.model.GpioData
+import com.boatspark.app.core.model.SystemData
 import com.boatspark.app.core.settings.StatusSection
 import com.boatspark.app.core.settings.TemperatureUnit
 import com.boatspark.app.ui.screens.BoatListScreen
@@ -27,6 +32,7 @@ import com.boatspark.app.ui.screens.SensorDetailScreen
 import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
 import com.boatspark.app.ui.theme.BoatSparkTheme
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -154,6 +160,43 @@ class BoatScreensTest {
         composeRule.onNodeWithText("Location").performClick()
         composeRule.waitForIdle()
         assertEquals(emptySet<StatusSection>(), expanded)
+    }
+
+    @Test
+    fun expandingSectionNearBottomScrollsItIntoView() {
+        var expanded by mutableStateOf(emptySet<StatusSection>())
+        composeRule.setContent {
+            BoatSparkTheme {
+                // Short enough that the expanded Device rows start below the visible area.
+                Box(Modifier.height(400.dp)) {
+                    BoatStatusScreen(
+                        cachedStatus = CachedValue(
+                            BoatStatus(
+                                boatId = 1,
+                                boatName = "Sea Breeze",
+                                firmwareVersion = 3,
+                                gpio = GpioData(13_800, 13_700, 1, 0, 0, 0, 0, 0),
+                                system = SystemData(1, -1, 68_064, 816, 874),
+                            ),
+                            refreshedAt = 1_769_000_000_000,
+                        ),
+                        osmTileUrl = "",
+                        seamarkTileUrl = "",
+                        temperatureUnit = TemperatureUnit.Fahrenheit,
+                        expandedSections = expanded,
+                        onSectionExpandedChange = { section, isExpanded ->
+                            expanded = if (isExpanded) expanded + section else expanded - section
+                        },
+                        onAlerts = {},
+                        onSensor = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Device").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Firmware").assertIsDisplayed()
     }
 
     @Test
