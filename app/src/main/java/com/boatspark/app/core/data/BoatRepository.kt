@@ -1,5 +1,7 @@
 package com.boatspark.app.core.data
 
+import com.boatspark.app.core.auth.AuthenticationRequiredException
+import com.boatspark.app.core.auth.SessionAuthority
 import com.boatspark.app.core.database.BoatAlertsEntity
 import com.boatspark.app.core.database.BoatEntity
 import com.boatspark.app.core.database.BoatSparkDao
@@ -28,7 +30,7 @@ class BoatRepository(
     private val api: BoatSparkApi,
     private val dao: BoatSparkDao,
     private val json: Json,
-    private val onAuthenticationExpired: () -> Unit,
+    private val session: SessionAuthority,
 ) {
     private val refreshMutex = Mutex()
 
@@ -62,10 +64,11 @@ class BoatRepository(
         }
 
     suspend fun refreshUserAndBoats() = refreshMutex.withLock {
-        authenticatedCall {
+        authenticatedCall { generation ->
             val now = System.currentTimeMillis()
             val profile = apiCall(json, api::currentUser)
             val remoteBoats = apiCall(json, api::boats).boats
+            requireSession(generation)
             dao.saveUser(UserEntity(profile.id, profile.email, profile.isActive, now))
             dao.replaceBoats(
                 remoteBoats.map {
@@ -76,12 +79,14 @@ class BoatRepository(
     }
 
     suspend fun refreshBoat(boatId: Long) = refreshMutex.withLock {
-        authenticatedCall {
+        authenticatedCall { generation ->
             val now = System.currentTimeMillis()
             val status = apiCall(json) { api.status(boatId) }
-            val alerts = apiCall(json) { api.alerts(boatId) }
+            requireSession(generation)
             dao.saveStatus(BoatStatusEntity(boatId, json.encodeToString(status), now))
-            dao.saveAlerts(BoatAlertsEntity(boatId, json.encodeToString(alerts), now))
+            val alerts = apiCall(json) { api.alerts(boatId) }
+            requireSession(generation)
+            dao.saveAlerts(BoatAlertsEntity(boatId, json.encodeToString(alerts), System.currentTimeMillis()))
         }
     }
 
@@ -99,10 +104,27 @@ class BoatRepository(
         dao.clearUserData()
     }
 
-    private suspend fun <T> authenticatedCall(block: suspend () -> T): T = try {
-        block()
-    } catch (error: ApiFailure.Authentication) {
-        onAuthenticationExpired()
-        throw error
+    /**
+     * Runs [block] for the current session. A 401 first forces a token refresh and
+     * retries once, so a transient rejection does not end an otherwise valid session.
+     */
+    private suspend fun <T> authenticatedCall(block: suspend (generation: Long) -> T): T {
+        val generation = session.currentGeneration()
+        return try {
+            block(generation)
+        } catch (_: ApiFailure.Authentication) {
+            session.invalidateAccessToken(generation)
+            try {
+                block(generation)
+            } catch (error: ApiFailure.Authentication) {
+                session.markSessionExpired(generation)
+                throw error
+            }
+        }
+    }
+
+    /** Drops results that arrive after the session that requested them has ended. */
+    private fun requireSession(generation: Long) {
+        if (session.currentGeneration() != generation) throw AuthenticationRequiredException()
     }
 }

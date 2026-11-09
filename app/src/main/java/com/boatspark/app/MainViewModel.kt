@@ -98,6 +98,8 @@ class MainViewModel(
     fun completeSignIn(data: Intent) {
         viewModelScope.launch {
             mutableUiState.value = MainUiState(isRefreshing = true)
+            // Never show a previous account's cache, even if its sign-out cleanup was skipped.
+            container.boatRepository.clear()
             val result = container.authRepository.handleAuthorizationResult(data)
             mutableUiState.value = MainUiState(message = result.exceptionOrNull()?.message)
         }

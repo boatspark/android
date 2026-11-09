@@ -59,7 +59,7 @@ class AppContainer(context: Context) {
         api,
         database.dao(),
         json,
-        authRepository::markSessionExpired,
+        authRepository,
     )
     val refreshScheduler = RefreshScheduler(context)
     val settingsRepository = SettingsRepository(context)

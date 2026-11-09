@@ -26,13 +26,28 @@ sealed interface AuthenticationState {
     data class Error(val message: String) : AuthenticationState
 }
 
+/** Lets data code tie API results to the session that requested them. */
+interface SessionAuthority {
+    fun currentGeneration(): Long
+
+    /** Forces the next request in [generation] to refresh its access token first. */
+    fun invalidateAccessToken(generation: Long)
+
+    /** Ends the session, but only if it is still [generation]. */
+    fun markSessionExpired(generation: Long)
+}
+
 class AuthRepository(
     private val config: AppConfig,
     private val authorizationService: AuthorizationService,
     private val store: EncryptedAuthStateStore,
-) {
+) : SessionAuthority {
     private val authState = AtomicReference(loadState())
     private val sessionGeneration = AtomicLong()
+
+    // Serialises session changes with credential writes so a late token callback
+    // cannot persist an old session after sign-out.
+    private val sessionLock = Any()
     private val mutableState = MutableStateFlow(
         if (authState.get().isAuthorized) AuthenticationState.SignedIn
         else AuthenticationState.SignedOut,
@@ -49,6 +64,7 @@ class AuthRepository(
             config.redirectUri,
         )
             .setScopes("openid", "email", "profile", "groups")
+            .apply { if (store.requiresLoginPrompt()) setPrompt(AuthorizationRequest.Prompt.LOGIN) }
             .build()
         return authorizationService.getAuthorizationRequestIntent(request)
     }
@@ -66,12 +82,15 @@ class AuthRepository(
         val state = AuthState(response, authorizationError)
         val tokenResponse = exchangeCode(response)
         state.update(tokenResponse, null)
-        if (sessionGeneration.get() != generation) {
-            throw AuthenticationRequiredException()
+        synchronized(sessionLock) {
+            if (sessionGeneration.get() != generation) {
+                throw AuthenticationRequiredException()
+            }
+            store.write(state.jsonSerializeString())
+            store.setRequiresLoginPrompt(false)
+            authState.set(state)
+            mutableState.value = AuthenticationState.SignedIn
         }
-        authState.set(state)
-        persist(state)
-        mutableState.value = AuthenticationState.SignedIn
     }.onFailure {
         if (it !is SignInCancelledException) {
             mutableState.value = AuthenticationState.Error(it.message ?: "Sign-in failed")
@@ -85,47 +104,68 @@ class AuthRepository(
             continuation.resumeWithException(AuthenticationRequiredException())
             return@suspendCancellableCoroutine
         }
+        val previousAccessToken = state.accessToken
+        val previousRefreshToken = state.refreshToken
         state.performActionWithFreshTokens(authorizationService) { accessToken, _, exception ->
-            if (exception != null || accessToken == null) {
-                if (!state.isAuthorized &&
-                    authState.get() === state &&
-                    sessionGeneration.compareAndSet(generation, generation + 1)
-                ) {
-                    authState.set(AuthState())
-                    store.clear()
-                    mutableState.value =
-                        AuthenticationState.Error("Your session expired. Sign in again.")
+            // AppAuth may call back on the main thread, so nothing here may throw.
+            val outcome = runCatching {
+                if (exception != null || accessToken == null) {
+                    if (!state.isAuthorized) {
+                        endSession(generation, state, "Your session expired. Sign in again.")
+                    }
+                    throw exception ?: AuthenticationRequiredException()
                 }
-                if (continuation.isActive) {
-                    continuation.resumeWithException(
-                        exception ?: AuthenticationRequiredException(),
-                    )
+                synchronized(sessionLock) {
+                    if (sessionGeneration.get() != generation || authState.get() !== state) {
+                        throw AuthenticationRequiredException()
+                    }
+                    if (accessToken != previousAccessToken || state.refreshToken != previousRefreshToken) {
+                        store.write(state.jsonSerializeString())
+                    }
                 }
-            } else if (sessionGeneration.get() != generation || authState.get() !== state) {
-                if (continuation.isActive) {
-                    continuation.resumeWithException(AuthenticationRequiredException())
-                }
-            } else {
-                persist(state)
-                if (continuation.isActive) {
-                    continuation.resume(accessToken)
-                }
+                accessToken
+            }
+            if (continuation.isActive) {
+                outcome.fold(continuation::resume, continuation::resumeWithException)
             }
         }
     }
 
-    fun markSessionExpired() {
-        sessionGeneration.incrementAndGet()
-        authState.set(AuthState())
-        store.clear()
-        mutableState.value = AuthenticationState.Error("Your session expired. Sign in again.")
+    override fun currentGeneration(): Long = sessionGeneration.get()
+
+    override fun invalidateAccessToken(generation: Long) {
+        val state = authState.get()
+        if (sessionGeneration.get() == generation) {
+            state.needsTokenRefresh = true
+        }
+    }
+
+    override fun markSessionExpired(generation: Long) {
+        endSession(generation, authState.get(), "Your session expired. Sign in again.")
     }
 
     fun clear() {
-        sessionGeneration.incrementAndGet()
-        authState.set(AuthState())
-        store.clear()
-        mutableState.value = AuthenticationState.SignedOut
+        synchronized(sessionLock) {
+            sessionGeneration.incrementAndGet()
+            authState.set(AuthState())
+            runCatching { store.clear() }
+            // An explicit sign-out should let the user pick an account next time.
+            runCatching { store.setRequiresLoginPrompt(true) }
+            mutableState.value = AuthenticationState.SignedOut
+        }
+    }
+
+    private fun endSession(generation: Long, state: AuthState, message: String) {
+        synchronized(sessionLock) {
+            if (authState.get() !== state ||
+                !sessionGeneration.compareAndSet(generation, generation + 1)
+            ) {
+                return
+            }
+            authState.set(AuthState())
+            runCatching { store.clear() }
+            mutableState.value = AuthenticationState.Error(message)
+        }
     }
 
     private suspend fun discoverConfiguration(issuer: Uri): AuthorizationServiceConfiguration =
@@ -151,14 +191,10 @@ class AuthRepository(
             }
         }
 
-    private fun persist(state: AuthState) {
-        store.write(state.jsonSerializeString())
-    }
-
     private fun loadState(): AuthState = try {
         store.read()?.let(AuthState::jsonDeserialize) ?: AuthState()
     } catch (_: Exception) {
-        store.clear()
+        runCatching { store.clear() }
         AuthState()
     }
 }
