@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,6 +41,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -60,7 +62,10 @@ import com.boatspark.app.core.settings.TemperatureUnit
 import com.boatspark.app.ui.EmptyState
 import com.boatspark.app.ui.SectionHeader
 import java.time.Instant
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 @Composable
 fun BoatStatusScreen(
@@ -268,15 +273,28 @@ private fun CollapsibleCard(
     visibleState.targetState = expanded
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     var userExpanded by remember { mutableStateOf(false) }
-    // Once the user expands the card, scroll so the revealed content is fully visible.
+    var cardHeight by remember { mutableIntStateOf(0) }
+    // Once the user expands the card, keep it in view as it grows so the revealed content
+    // scrolls on screen along with the expand animation.
     LaunchedEffect(userExpanded) {
         if (!userExpanded) return@LaunchedEffect
-        snapshotFlow { visibleState.isIdle && visibleState.currentState }.first { it }
+        coroutineScope {
+            val following = launch {
+                snapshotFlow { cardHeight }.collectLatest { bringIntoViewRequester.bringIntoView() }
+            }
+            snapshotFlow { visibleState.isIdle && visibleState.currentState }.first { it }
+            following.cancel()
+        }
         bringIntoViewRequester.bringIntoView()
         userExpanded = false
     }
 
-    Card(modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoViewRequester)) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoViewRequester)
+            .onSizeChanged { cardHeight = it.height },
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
