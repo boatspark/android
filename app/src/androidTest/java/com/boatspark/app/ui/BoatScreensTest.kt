@@ -7,6 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -23,11 +26,14 @@ import com.boatspark.app.core.model.LastBeaconReading
 import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.GpioData
+import com.boatspark.app.core.model.GpioHistorySample
+import com.boatspark.app.core.model.GpioMetric
 import com.boatspark.app.core.model.SystemData
 import com.boatspark.app.core.settings.StatusSection
 import com.boatspark.app.core.settings.TemperatureUnit
 import com.boatspark.app.ui.screens.BoatListScreen
 import com.boatspark.app.ui.screens.BoatStatusScreen
+import com.boatspark.app.ui.screens.ElectricalDetailScreen
 import com.boatspark.app.ui.screens.SensorDetailScreen
 import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
@@ -94,6 +100,7 @@ class BoatScreensTest {
                     onSectionExpandedChange = { _, _ -> },
                     onAlerts = {},
                     onSensor = {},
+                    onElectrical = {},
                 )
             }
         }
@@ -119,6 +126,7 @@ class BoatScreensTest {
                     onSectionExpandedChange = { _, _ -> },
                     onAlerts = {},
                     onSensor = {},
+                    onElectrical = {},
                 )
             }
         }
@@ -148,6 +156,7 @@ class BoatScreensTest {
                     },
                     onAlerts = {},
                     onSensor = {},
+                    onElectrical = {},
                 )
             }
         }
@@ -189,11 +198,13 @@ class BoatScreensTest {
                         },
                         onAlerts = {},
                         onSensor = {},
+                        onElectrical = {},
                     )
                 }
             }
         }
 
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Device"))
         composeRule.onNodeWithText("Device").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Firmware").assertIsDisplayed()
@@ -223,6 +234,7 @@ class BoatScreensTest {
                     onSectionExpandedChange = { _, _ -> },
                     onAlerts = {},
                     onSensor = { opened = it },
+                    onElectrical = {},
                 )
             }
         }
@@ -281,6 +293,77 @@ class BoatScreensTest {
         composeRule.onNodeWithContentDescription("Temperature history chart").assertIsDisplayed()
         state = HistoryState.Loaded(history.copy(beacons = emptyList()))
         composeRule.onNodeWithText("No temperature readings in the last 48 hours.").assertIsDisplayed()
+    }
+
+    @Test
+    fun electricalTilesGroupUnderHeadingsAndOpenDetail() {
+        var opened: GpioMetric? = null
+        composeRule.setContent {
+            BoatSparkTheme {
+                BoatStatusScreen(
+                    cachedStatus = CachedValue(
+                        BoatStatus(
+                            boatId = 1,
+                            boatName = "Sea Breeze",
+                            gpio = GpioData(1380, 1275, 1, 0, 0, 0, 1, 0),
+                            beacons = listOf(BeaconReading(3, "Cabin", -65, 2250, 5500, 95, 3000)),
+                        ),
+                        refreshedAt = 1_769_000_000_000,
+                    ),
+                    osmTileUrl = "",
+                    seamarkTileUrl = "",
+                    temperatureUnit = TemperatureUnit.Fahrenheit,
+                    expandedSections = emptySet(),
+                    onSectionExpandedChange = { _, _ -> },
+                    onAlerts = {},
+                    onSensor = {},
+                    onElectrical = { opened = it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Power").assertIsDisplayed()
+        composeRule.onNodeWithText("Sensors").assertIsDisplayed()
+        composeRule.onNodeWithText("Temperature Sensors").assertExists()
+        composeRule.onNodeWithText("13.80 V").assertIsDisplayed()
+        composeRule.onNodeWithText("12.75 V").assertIsDisplayed()
+        composeRule.onNodeWithText("Battery 2").performClick()
+        composeRule.waitForIdle()
+        assertEquals(GpioMetric.Battery2, opened)
+        composeRule.onNodeWithText("Bilge pump").performClick()
+        composeRule.waitForIdle()
+        assertEquals(GpioMetric.BilgePump, opened)
+    }
+
+    @Test
+    fun electricalDetailShowsStateHistoryAndEventCount() {
+        fun gpio(bilge: Int, cycles: Int) = GpioData(1380, 1275, 1, 0, bilge, cycles, 0, 0)
+        val history = BoatHistory(
+            boatId = 1,
+            windowStart = "2026-02-01T00:00:00Z",
+            windowEnd = "2026-02-03T00:00:00Z",
+            gpio = listOf(
+                GpioHistorySample("2026-02-01T00:05:00Z", gpio(0, 3)),
+                GpioHistorySample("2026-02-01T00:20:00Z", gpio(0, 5)),
+                GpioHistorySample("2026-02-01T00:35:00Z", gpio(1, 6)),
+            ),
+        )
+        composeRule.setContent {
+            BoatSparkTheme {
+                ElectricalDetailScreen(
+                    cachedStatus = CachedValue(
+                        BoatStatus(boatId = 1, boatName = "Sea Breeze", gpio = gpio(1, 6)),
+                        refreshedAt = 1_769_000_000_000,
+                    ),
+                    metric = GpioMetric.BilgePump,
+                    history = HistoryState.Loaded(history),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("On").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Bilge pump history chart").assertIsDisplayed()
+        composeRule.onNodeWithText("Turned on 3 times in the last 48 hours.").assertIsDisplayed()
     }
 
     @Test

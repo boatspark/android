@@ -51,8 +51,8 @@ import androidx.compose.ui.unit.dp
 import com.boatspark.app.core.data.CachedValue
 import com.boatspark.app.core.model.BeaconReading
 import com.boatspark.app.core.model.BoatStatus
+import com.boatspark.app.core.model.GpioMetric
 import com.boatspark.app.core.model.batteryThirds
-import com.boatspark.app.core.model.binaryStatus
 import com.boatspark.app.core.model.formatDecimal
 import com.boatspark.app.core.model.formatTemperature
 import com.boatspark.app.core.model.formatTimestamp
@@ -77,6 +77,7 @@ fun BoatStatusScreen(
     onSectionExpandedChange: (StatusSection, Boolean) -> Unit,
     onAlerts: (Long) -> Unit,
     onSensor: (Long) -> Unit,
+    onElectrical: (GpioMetric) -> Unit,
 ) {
     val status = cachedStatus?.value
     if (status == null) {
@@ -145,19 +146,22 @@ fun BoatStatusScreen(
         }
 
         status.gpio?.let { gpio ->
-            fullWidthItem {
-                StatusCard("Electrical and machinery") {
-                    ValueRow("Battery 1", "${formatDecimal(gpio.battery1Volts, 2)} V")
-                    ValueRow("Battery 2", "${formatDecimal(gpio.battery2Volts, 2)} V")
-                    ValueRow("Shore power", binaryStatus(gpio.shorePowerStatus))
-                    ValueRow("Bilge pump", binaryStatus(gpio.bilgePumpStatus))
-                    ValueRow("Engine", binaryStatus(gpio.engineStatus))
+            fullWidthItem { SectionTitle("Power") }
+            listOf(GpioMetric.Battery1, GpioMetric.Battery2, GpioMetric.ShorePower).forEach { metric ->
+                item(key = "gpio-${metric.routeKey}") {
+                    ValueTile(metric.title, metric.display(gpio), onClick = { onElectrical(metric) })
+                }
+            }
+            fullWidthItem { SectionTitle("Sensors") }
+            listOf(GpioMetric.BilgePump, GpioMetric.Engine).forEach { metric ->
+                item(key = "gpio-${metric.routeKey}") {
+                    ValueTile(metric.title, metric.display(gpio), onClick = { onElectrical(metric) })
                 }
             }
         }
 
         if (status.beacons.isNotEmpty() || status.missingBeacons.isNotEmpty()) {
-            fullWidthItem { Text("Sensors", style = MaterialTheme.typography.titleLarge) }
+            fullWidthItem { SectionTitle("Temperature Sensors") }
             // The API doesn't guarantee unique beacon IDs, so the position keeps keys unique.
             status.beacons.forEachIndexed { index, beacon ->
                 item(key = "beacon-$index-${beacon.beaconId}") {
@@ -200,6 +204,21 @@ fun BoatStatusScreen(
 
 private fun LazyGridScope.fullWidthItem(content: @Composable () -> Unit) {
     item(span = { GridItemSpan(maxLineSpan) }) { content() }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Text(title, style = MaterialTheme.typography.titleLarge)
+}
+
+@Composable
+private fun ValueTile(title: String, value: String, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
 }
 
 @Composable

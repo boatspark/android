@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import org.junit.Test
 
-class TemperatureHistoryTest {
+class HistoryChartTest {
     private val history = BoatSparkJson.decodeFromString<BoatHistory>(
         """
         {

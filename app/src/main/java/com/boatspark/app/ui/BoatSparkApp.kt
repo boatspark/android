@@ -42,10 +42,12 @@ import androidx.navigation.compose.rememberNavController
 import com.boatspark.app.BuildConfig
 import com.boatspark.app.MainViewModel
 import com.boatspark.app.core.auth.AuthenticationState
+import com.boatspark.app.core.model.GpioMetric
 import com.boatspark.app.ui.screens.AlertsScreen
 import com.boatspark.app.ui.screens.BoatListScreen
 import com.boatspark.app.ui.screens.BoatStatusScreen
 import com.boatspark.app.ui.screens.ProfileScreen
+import com.boatspark.app.ui.screens.ElectricalDetailScreen
 import com.boatspark.app.ui.screens.SensorDetailScreen
 import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
@@ -54,6 +56,7 @@ internal const val ROUTE_BOATS = "boats"
 private const val ROUTE_PROFILE = "profile"
 internal const val ROUTE_STATUS = "status/{boatId}"
 internal const val ROUTE_SENSOR = "status/{boatId}/sensor/{beaconId}"
+internal const val ROUTE_ELECTRICAL = "status/{boatId}/electrical/{metric}"
 private const val ROUTE_ALERTS = "alerts/{boatId}"
 private const val ROUTE_SETTINGS = "settings"
 
@@ -167,6 +170,9 @@ private fun AuthenticatedApp(
                     onSectionExpandedChange = viewModel::setSectionExpanded,
                     onAlerts = { boatId -> navController.navigate("alerts/$boatId") },
                     onSensor = { beaconId -> boatId?.let { navController.navigate("status/$it/sensor/$beaconId") } },
+                    onElectrical = { metric ->
+                        boatId?.let { navController.navigate("status/$it/electrical/${metric.routeKey}") }
+                    },
                 )
             }
             composable(ROUTE_SENSOR) { entry ->
@@ -186,6 +192,20 @@ private fun AuthenticatedApp(
                         history = history,
                         temperatureUnit = temperatureUnit,
                     )
+                }
+            }
+            composable(ROUTE_ELECTRICAL) { entry ->
+                val boatId = entry.arguments?.getString("boatId")?.toLongOrNull()
+                val metric = GpioMetric.fromRouteKey(entry.arguments?.getString("metric"))
+                LaunchedEffect(boatId) {
+                    boatId?.let {
+                        viewModel.selectBoat(it)
+                        viewModel.openHistory(it)
+                    }
+                }
+                DisposableEffect(Unit) { onDispose(viewModel::closeHistory) }
+                if (metric != null) {
+                    ElectricalDetailScreen(cachedStatus = status, metric = metric, history = history)
                 }
             }
             composable(ROUTE_ALERTS) { entry ->

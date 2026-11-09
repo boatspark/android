@@ -152,7 +152,14 @@ data class BoatHistory(
     @SerialName("window_start") val windowStart: String,
     @SerialName("window_end") val windowEnd: String,
     @SerialName("interval_minutes") val intervalMinutes: Int = 15,
+    val gpio: List<GpioHistorySample> = emptyList(),
     val beacons: List<BeaconHistory> = emptyList(),
+)
+
+@Serializable
+data class GpioHistorySample(
+    @SerialName("published_at") val publishedAt: String,
+    val values: GpioData,
 )
 
 @Serializable
