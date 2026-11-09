@@ -128,10 +128,12 @@ The devcontainer bind-mounts the host `/dev/bus/usb`, allows USB character
 devices (`--device-cgroup-rule=c 189:* rmw`) and adds the non-root `vscode`
 user to group id 46, which is `plugdev` on Debian/Ubuntu hosts. If your host
 uses a different group for Android USB nodes, adjust `--group-add` in
-`.devcontainer/devcontainer.json`. The ADB key is kept in the named Docker
-volume `boatspark-android-adb-keys`, so the phone only needs to approve the
-container once. The host must provide `/dev/bus/usb`; on a Linux host without
-it, run `sudo mkdir -p /dev/bus/usb` before starting the container.
+`.devcontainer/devcontainer.json`. The container's `~/.android`, holding the
+ADB key and debug signing keystore, is the named Docker volume
+`android-adb-keys`. Other Android devcontainers can mount the same volume, so
+the phone only needs to approve one key across projects and rebuilds. The
+host must provide `/dev/bus/usb`; on a Linux host without it, run
+`sudo mkdir -p /dev/bus/usb` before starting the container.
 
 Run ADB through `./scripts/adb`. Only one ADB server can claim a device, so
 stop ADB on the host or in other containers first. The container has no udev

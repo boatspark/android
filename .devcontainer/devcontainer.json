@@ -10,6 +10,6 @@
   ],
   "mounts": [
     "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
-    "source=boatspark-android-adb-keys,target=/home/vscode/.android,type=volume"
+    "source=android-adb-keys,target=/home/vscode/.android,type=volume"
   ]
 }
