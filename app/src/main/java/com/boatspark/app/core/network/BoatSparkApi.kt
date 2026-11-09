@@ -1,6 +1,7 @@
 package com.boatspark.app.core.network
 
 import com.boatspark.app.core.model.BoatAlerts
+import com.boatspark.app.core.model.BoatHistory
 import com.boatspark.app.core.model.BoatList
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.UserProfile
@@ -23,5 +24,7 @@ interface BoatSparkApi {
         @Path("boatId") boatId: Long,
         @Query("days") days: Int = 7,
     ): BoatAlerts
-}
 
+    @GET("api/v1/boats/{boatId}/history")
+    suspend fun history(@Path("boatId") boatId: Long): BoatHistory
+}

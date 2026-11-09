@@ -11,8 +11,21 @@ fun formatDecimal(value: Double, decimals: Int = 1): String =
     String.format(Locale.getDefault(), "%.${decimals}f", value)
 
 fun formatTemperature(celsius: Double, unit: TemperatureUnit): String = when (unit) {
-    TemperatureUnit.Fahrenheit -> "${formatDecimal(celsius * 9 / 5 + 32)} °F"
+    TemperatureUnit.Fahrenheit -> "${formatDecimal(convertTemperature(celsius, unit))} °F"
     TemperatureUnit.Celsius -> "${formatDecimal(celsius)} °C"
+}
+
+fun convertTemperature(celsius: Double, unit: TemperatureUnit): Double = when (unit) {
+    TemperatureUnit.Fahrenheit -> celsius * 9 / 5 + 32
+    TemperatureUnit.Celsius -> celsius
+}
+
+/** Battery level in thirds (1..3), or null when the reported percentage is out of range. */
+fun batteryThirds(percentage: Int): Int? = when (percentage) {
+    in 67..100 -> 3
+    in 34..66 -> 2
+    in 0..33 -> 1
+    else -> null
 }
 
 fun formatTimestamp(value: String?): String {
@@ -24,6 +37,12 @@ fun formatTimestamp(value: String?): String {
     } catch (_: DateTimeParseException) {
         value
     }
+}
+
+fun parseTimestamp(value: String): Instant? = try {
+    Instant.parse(normalizeTimestamp(value))
+} catch (_: DateTimeParseException) {
+    null
 }
 
 private fun normalizeTimestamp(value: String): String =

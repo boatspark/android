@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -45,12 +46,14 @@ import com.boatspark.app.ui.screens.AlertsScreen
 import com.boatspark.app.ui.screens.BoatListScreen
 import com.boatspark.app.ui.screens.BoatStatusScreen
 import com.boatspark.app.ui.screens.ProfileScreen
+import com.boatspark.app.ui.screens.SensorDetailScreen
 import com.boatspark.app.ui.screens.SettingsScreen
 import com.boatspark.app.ui.screens.SignInScreen
 
 internal const val ROUTE_BOATS = "boats"
 private const val ROUTE_PROFILE = "profile"
 internal const val ROUTE_STATUS = "status/{boatId}"
+internal const val ROUTE_SENSOR = "status/{boatId}/sensor/{beaconId}"
 private const val ROUTE_ALERTS = "alerts/{boatId}"
 private const val ROUTE_SETTINGS = "settings"
 
@@ -121,6 +124,8 @@ private fun AuthenticatedApp(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val temperatureUnit by viewModel.temperatureUnit.collectAsStateWithLifecycle()
+    val expandedSections by viewModel.expandedSections.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     SingleBoatHome(navController, boatIds = boats.map { it.value.id })
 
     Scaffold(
@@ -158,8 +163,30 @@ private fun AuthenticatedApp(
                     osmTileUrl = BuildConfig.OSM_TILE_URL,
                     seamarkTileUrl = BuildConfig.SEAMARK_TILE_URL,
                     temperatureUnit = temperatureUnit,
+                    expandedSections = expandedSections,
+                    onSectionExpandedChange = viewModel::setSectionExpanded,
                     onAlerts = { boatId -> navController.navigate("alerts/$boatId") },
+                    onSensor = { beaconId -> boatId?.let { navController.navigate("status/$it/sensor/$beaconId") } },
                 )
+            }
+            composable(ROUTE_SENSOR) { entry ->
+                val boatId = entry.arguments?.getString("boatId")?.toLongOrNull()
+                val beaconId = entry.arguments?.getString("beaconId")?.toLongOrNull()
+                LaunchedEffect(boatId) {
+                    boatId?.let {
+                        viewModel.selectBoat(it)
+                        viewModel.openHistory(it)
+                    }
+                }
+                DisposableEffect(Unit) { onDispose(viewModel::closeHistory) }
+                if (beaconId != null) {
+                    SensorDetailScreen(
+                        cachedStatus = status,
+                        beaconId = beaconId,
+                        history = history,
+                        temperatureUnit = temperatureUnit,
+                    )
+                }
             }
             composable(ROUTE_ALERTS) { entry ->
                 val boatId = entry.arguments?.getString("boatId")?.toLongOrNull()

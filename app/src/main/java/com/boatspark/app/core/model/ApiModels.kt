@@ -127,5 +127,34 @@ data class BoatAlerts(
 )
 
 @Serializable
+data class BeaconHistoryValues(
+    val temperature: Int? = null,
+) {
+    val temperatureCelsius: Double? get() = temperature?.let { it / 100.0 }
+}
+
+@Serializable
+data class BeaconHistorySample(
+    @SerialName("published_at") val publishedAt: String,
+    val values: BeaconHistoryValues,
+)
+
+@Serializable
+data class BeaconHistory(
+    @SerialName("beacon_id") val beaconId: Long,
+    @SerialName("beacon_name") val beaconName: String,
+    val readings: List<BeaconHistorySample> = emptyList(),
+)
+
+@Serializable
+data class BoatHistory(
+    @SerialName("boat_id") val boatId: Long,
+    @SerialName("window_start") val windowStart: String,
+    @SerialName("window_end") val windowEnd: String,
+    @SerialName("interval_minutes") val intervalMinutes: Int = 15,
+    val beacons: List<BeaconHistory> = emptyList(),
+)
+
+@Serializable
 data class ApiError(val detail: String)
 

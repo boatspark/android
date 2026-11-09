@@ -9,9 +9,11 @@ import com.boatspark.app.core.auth.AuthenticationState
 import com.boatspark.app.core.data.CachedValue
 import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatAlerts
+import com.boatspark.app.core.model.BoatHistory
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.UserProfile
 import com.boatspark.app.core.settings.SettingsRepository
+import com.boatspark.app.core.settings.StatusSection
 import com.boatspark.app.core.settings.TemperatureUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +27,12 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+sealed interface HistoryState {
+    data object Loading : HistoryState
+    data class Loaded(val history: BoatHistory) : HistoryState
+    data class Failed(val message: String) : HistoryState
+}
 
 data class MainUiState(
     val isRefreshing: Boolean = false,
@@ -52,6 +60,13 @@ class MainViewModel(
     val temperatureUnit: StateFlow<TemperatureUnit> = container.settingsRepository.temperatureUnit
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsRepository.DEFAULT_TEMPERATURE_UNIT)
 
+    val expandedSections: StateFlow<Set<StatusSection>> = container.settingsRepository.expandedSections
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    private val historyBoatId = MutableStateFlow<Long?>(null)
+    private val mutableHistory = MutableStateFlow<HistoryState?>(null)
+    val history: StateFlow<HistoryState?> = mutableHistory.asStateFlow()
+
     private val mutableUiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = mutableUiState.asStateFlow()
 
@@ -68,6 +83,8 @@ class MainViewModel(
                     -> {
                         container.refreshScheduler.cancel()
                         selectedBoatId.value = null
+                        historyBoatId.value = null
+                        mutableHistory.value = null
                         container.boatRepository.clear()
                         mutableUiState.value = MainUiState()
                     }
@@ -98,6 +115,42 @@ class MainViewModel(
 
     fun refresh() {
         viewModelScope.launch { refreshNow() }
+        historyBoatId.value?.let(::loadHistory)
+    }
+
+    fun openHistory(boatId: Long) {
+        if (historyBoatId.value != boatId) mutableHistory.value = null
+        historyBoatId.value = boatId
+        loadHistory(boatId)
+    }
+
+    fun closeHistory() {
+        historyBoatId.value = null
+    }
+
+    private fun loadHistory(boatId: Long) {
+        viewModelScope.launch {
+            if (mutableHistory.value !is HistoryState.Loaded) {
+                mutableHistory.value = HistoryState.Loading
+            }
+            val result = try {
+                HistoryState.Loaded(container.boatRepository.history(boatId))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                HistoryState.Failed(error.message ?: "History unavailable")
+            }
+            if (historyBoatId.value == boatId) {
+                // Keep showing the previous graph if a background refresh fails.
+                if (result is HistoryState.Loaded || mutableHistory.value !is HistoryState.Loaded) {
+                    mutableHistory.value = result
+                }
+            }
+        }
+    }
+
+    fun setSectionExpanded(section: StatusSection, expanded: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setSectionExpanded(section, expanded) }
     }
 
     suspend fun pollWhileForeground() {

@@ -160,6 +160,7 @@ dependencies {
     implementation(libs.appauth)
     implementation(libs.maplibre.compose)
     runtimeOnly(libs.maplibre.compose.runtime.opengl)
+    implementation(libs.vico.compose.m3)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test.junit)

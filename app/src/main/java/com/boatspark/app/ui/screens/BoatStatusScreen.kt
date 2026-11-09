@@ -1,28 +1,52 @@
 package com.boatspark.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Battery2Bar
+import androidx.compose.material.icons.filled.Battery4Bar
+import androidx.compose.material.icons.filled.Battery6Bar
+import androidx.compose.material.icons.filled.BatteryUnknown
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.boatspark.app.core.data.CachedValue
 import com.boatspark.app.core.model.BeaconReading
 import com.boatspark.app.core.model.BoatStatus
+import com.boatspark.app.core.model.batteryThirds
 import com.boatspark.app.core.model.binaryStatus
 import com.boatspark.app.core.model.formatDecimal
 import com.boatspark.app.core.model.formatTemperature
 import com.boatspark.app.core.model.formatTimestamp
 import com.boatspark.app.core.model.powerSource
+import com.boatspark.app.core.settings.StatusSection
 import com.boatspark.app.core.settings.TemperatureUnit
 import com.boatspark.app.ui.EmptyState
 import com.boatspark.app.ui.SectionHeader
@@ -34,7 +58,10 @@ fun BoatStatusScreen(
     osmTileUrl: String,
     seamarkTileUrl: String,
     temperatureUnit: TemperatureUnit,
+    expandedSections: Set<StatusSection>,
+    onSectionExpandedChange: (StatusSection, Boolean) -> Unit,
     onAlerts: (Long) -> Unit,
+    onSensor: (Long) -> Unit,
 ) {
     val status = cachedStatus?.value
     if (status == null) {
@@ -42,30 +69,35 @@ fun BoatStatusScreen(
         return
     }
 
-    LazyColumn(
+    LazyVerticalGrid(
+        // At least 150dp per tile: two across on a portrait phone, more when wider.
+        columns = GridCells.Adaptive(150.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
-            SectionHeader(
-                title = status.boatName,
-                action = "View alerts",
-                onAction = { onAlerts(status.boatId) },
-            )
-            Text(
-                "Reading ${formatTimestamp(status.publishedAt)}",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                "Cached ${formatTimestamp(Instant.ofEpochMilli(cachedStatus.refreshedAt).toString())}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+        fullWidthItem {
+            Column {
+                SectionHeader(
+                    title = status.boatName,
+                    action = "View alerts",
+                    onAction = { onAlerts(status.boatId) },
+                )
+                Text(
+                    "Reading ${formatTimestamp(status.publishedAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Cached ${formatTimestamp(Instant.ofEpochMilli(cachedStatus.refreshedAt).toString())}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
 
         val shownGps = status.gps ?: status.lastGps?.gps
         if (shownGps != null) {
-            item {
+            fullWidthItem {
                 key(status.boatId) {
                     BoatMap(
                         gps = shownGps,
@@ -75,8 +107,14 @@ fun BoatStatusScreen(
                     )
                 }
             }
-            item {
-                StatusCard("Location") {
+        }
+        fullWidthItem {
+            CollapsibleCard(
+                title = "Location",
+                expanded = StatusSection.Location in expandedSections,
+                onExpandedChange = { onSectionExpandedChange(StatusSection.Location, it) },
+            ) {
+                if (shownGps != null) {
                     ValueRow(
                         if (status.gps == null) "Last known position" else "Current position",
                         "${formatDecimal(shownGps.latitudeDegrees, 6)}, ${formatDecimal(shownGps.longitudeDegrees, 6)}",
@@ -85,18 +123,14 @@ fun BoatStatusScreen(
                     ValueRow("Course", "${shownGps.courseOverGround}°")
                     ValueRow("Speed", "${formatDecimal(shownGps.speedKnots, 2)} kn")
                     ValueRow("PDOP", formatDecimal(shownGps.pdopValue, 2))
-                }
-            }
-        } else {
-            item {
-                StatusCard("Location") {
+                } else {
                     Text(if (status.gpsNoFix) "No GPS fix is available." else "No GPS data is available.")
                 }
             }
         }
 
         status.gpio?.let { gpio ->
-            item {
+            fullWidthItem {
                 StatusCard("Electrical and machinery") {
                     ValueRow("Battery 1", "${formatDecimal(gpio.battery1Volts, 2)} V")
                     ValueRow("Battery 2", "${formatDecimal(gpio.battery2Volts, 2)} V")
@@ -107,9 +141,33 @@ fun BoatStatusScreen(
             }
         }
 
+        if (status.beacons.isNotEmpty() || status.missingBeacons.isNotEmpty()) {
+            fullWidthItem { Text("Sensors", style = MaterialTheme.typography.titleLarge) }
+            // The API doesn't guarantee unique beacon IDs, so the position keeps keys unique.
+            status.beacons.forEachIndexed { index, beacon ->
+                item(key = "beacon-$index-${beacon.beaconId}") {
+                    SensorTile(beacon, temperatureUnit, lastSeen = null, onClick = { onSensor(beacon.beaconId) })
+                }
+            }
+            status.missingBeacons.forEachIndexed { index, missing ->
+                item(key = "missing-$index-${missing.beacon.beaconId}") {
+                    SensorTile(
+                        missing.beacon,
+                        temperatureUnit,
+                        lastSeen = formatTimestamp(missing.publishedAt),
+                        onClick = { onSensor(missing.beacon.beaconId) },
+                    )
+                }
+            }
+        }
+
         status.system?.let { system ->
-            item {
-                StatusCard("Device") {
+            fullWidthItem {
+                CollapsibleCard(
+                    title = "Device",
+                    expanded = StatusSection.Device in expandedSections,
+                    onExpandedChange = { onSectionExpandedChange(StatusSection.Device, it) },
+                ) {
                     ValueRow("Power source", powerSource(system.powerSource))
                     ValueRow(
                         "Device battery",
@@ -122,45 +180,106 @@ fun BoatStatusScreen(
                 }
             }
         }
+    }
+}
 
-        if (status.beacons.isNotEmpty() || status.missingBeacons.isNotEmpty()) {
-            item { Text("Sensors", style = MaterialTheme.typography.titleLarge) }
-            // The API doesn't guarantee unique beacon IDs, so the position keeps keys unique.
-            status.beacons.forEachIndexed { index, beacon ->
-                item(key = "beacon-$index-${beacon.beaconId}") {
-                    BeaconCard(beacon, subtitle = "Current", temperatureUnit = temperatureUnit)
-                }
-            }
-            status.missingBeacons.forEachIndexed { index, missing ->
-                item(key = "missing-$index-${missing.beacon.beaconId}") {
-                    BeaconCard(
-                        missing.beacon,
-                        subtitle = "Last seen ${formatTimestamp(missing.publishedAt)}",
-                        temperatureUnit = temperatureUnit,
+private fun LazyGridScope.fullWidthItem(content: @Composable () -> Unit) {
+    item(span = { GridItemSpan(maxLineSpan) }) { content() }
+}
+
+@Composable
+private fun SensorTile(
+    beacon: BeaconReading,
+    temperatureUnit: TemperatureUnit,
+    lastSeen: String?,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (lastSeen != null) Modifier.alpha(0.55f) else Modifier),
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    beacon.beaconName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = 28.dp),
+                )
+                Text(
+                    formatTemperature(beacon.temperatureCelsius, temperatureUnit),
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    "${formatDecimal(beacon.humidityPercent, 0)}% humidity",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (lastSeen != null) {
+                    Text(
+                        "Last seen $lastSeen",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+            }
+            BatteryIcon(
+                beacon.batteryPercentage,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun BatteryIcon(percentage: Int, modifier: Modifier = Modifier) {
+    val icon: ImageVector = when (batteryThirds(percentage)) {
+        3 -> Icons.Filled.Battery6Bar
+        2 -> Icons.Filled.Battery4Bar
+        1 -> Icons.Filled.Battery2Bar
+        else -> Icons.Filled.BatteryUnknown
+    }
+    Icon(icon, contentDescription = "Battery $percentage%", modifier = modifier)
+}
+
+@Composable
+private fun CollapsibleCard(
+    title: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) { onExpandedChange(!expanded) }
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+        }
+        AnimatedVisibility(expanded) {
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                content()
             }
         }
     }
 }
 
 @Composable
-private fun BeaconCard(
-    beacon: BeaconReading,
-    subtitle: String,
-    temperatureUnit: TemperatureUnit,
-) {
-    StatusCard(beacon.beaconName) {
-        Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        ValueRow("Temperature", formatTemperature(beacon.temperatureCelsius, temperatureUnit))
-        ValueRow("Humidity", "${formatDecimal(beacon.humidityPercent, 0)}%")
-        ValueRow("Battery", "${beacon.batteryPercentage}%")
-        ValueRow("Signal", "${beacon.rssi} dBm")
-    }
-}
-
-@Composable
-private fun StatusCard(
+internal fun StatusCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -176,7 +295,7 @@ private fun StatusCard(
 }
 
 @Composable
-private fun ValueRow(label: String, value: String) {
+internal fun ValueRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,

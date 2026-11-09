@@ -44,4 +44,16 @@ class DisplayFormattingTest {
         assertEquals("22.5 °C", formatTemperature(22.5, TemperatureUnit.Celsius))
         assertEquals("22.6 °C", formatTemperature(22.56, TemperatureUnit.Celsius))
     }
+
+    @Test
+    fun `battery percentage maps to thirds`() {
+        assertEquals(3, batteryThirds(100))
+        assertEquals(3, batteryThirds(67))
+        assertEquals(2, batteryThirds(66))
+        assertEquals(2, batteryThirds(34))
+        assertEquals(1, batteryThirds(33))
+        assertEquals(1, batteryThirds(0))
+        assertEquals(null, batteryThirds(-1))
+        assertEquals(null, batteryThirds(101))
+    }
 }

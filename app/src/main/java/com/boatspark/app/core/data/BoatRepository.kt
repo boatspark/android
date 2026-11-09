@@ -7,6 +7,7 @@ import com.boatspark.app.core.database.BoatStatusEntity
 import com.boatspark.app.core.database.UserEntity
 import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatAlerts
+import com.boatspark.app.core.model.BoatHistory
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.UserProfile
 import com.boatspark.app.core.network.ApiFailure
@@ -82,6 +83,11 @@ class BoatRepository(
             dao.saveStatus(BoatStatusEntity(boatId, json.encodeToString(status), now))
             dao.saveAlerts(BoatAlertsEntity(boatId, json.encodeToString(alerts), now))
         }
+    }
+
+    /** History is fetched on demand and not cached offline. */
+    suspend fun history(boatId: Long): BoatHistory = authenticatedCall {
+        apiCall(json) { api.history(boatId) }
     }
 
     suspend fun refreshAll() {
