@@ -2,7 +2,10 @@ package com.boatspark.app.core.model
 
 import com.boatspark.app.core.settings.TemperatureUnit
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -33,20 +36,29 @@ fun formatTimestamp(value: String?): String {
     return try {
         DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm", Locale.getDefault())
             .withZone(ZoneId.systemDefault())
-            .format(Instant.parse(normalizeTimestamp(value)))
+            .format(parseInstant(value))
     } catch (_: DateTimeParseException) {
         value
     }
 }
 
 fun parseTimestamp(value: String): Instant? = try {
-    Instant.parse(normalizeTimestamp(value))
+    parseInstant(value)
 } catch (_: DateTimeParseException) {
     null
 }
 
-private fun normalizeTimestamp(value: String): String =
-    if (value.endsWith("Z") || OFFSET_SUFFIX.containsMatchIn(value)) value else "${value}Z"
+/**
+ * Parses ISO-8601 timestamps with `Z`, a numeric offset, or no zone (treated as UTC).
+ * `Instant.parse` rejects numeric offsets on Android 13 and earlier, so offsets go
+ * through `OffsetDateTime` instead.
+ */
+private fun parseInstant(value: String): Instant =
+    if (value.endsWith("Z") || OFFSET_SUFFIX.containsMatchIn(value)) {
+        OffsetDateTime.parse(value, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant()
+    } else {
+        LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toInstant(ZoneOffset.UTC)
+    }
 
 private val OFFSET_SUFFIX = Regex("[+-]\\d{2}:\\d{2}$")
 
