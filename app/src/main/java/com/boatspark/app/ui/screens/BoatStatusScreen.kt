@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -41,6 +42,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -114,6 +116,13 @@ fun BoatStatusScreen(
         val shownGps = status.gps ?: status.lastGps?.gps
         if (shownGps != null) {
             fullWidthItem {
+                // Keep the map composed while scrolled away, so returning to it does not
+                // tear down and rebuild its GL surface, style and tiles.
+                val pinnableContainer = LocalPinnableContainer.current
+                DisposableEffect(pinnableContainer) {
+                    val handle = pinnableContainer?.pin()
+                    onDispose { handle?.release() }
+                }
                 key(status.boatId) {
                     BoatMap(
                         gps = shownGps,
