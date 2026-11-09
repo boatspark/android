@@ -36,6 +36,8 @@ class AppContainer(context: Context) {
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // Bounds the whole call, so a trickling response cannot hold the refresh lock indefinitely.
+        .callTimeout(60, TimeUnit.SECONDS)
         .addInterceptor(AccessTokenInterceptor(authRepository::freshAccessToken))
         .addInterceptor(
             HttpLoggingInterceptor().apply {

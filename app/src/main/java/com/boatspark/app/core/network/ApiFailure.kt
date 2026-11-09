@@ -4,6 +4,7 @@ import com.boatspark.app.core.model.ApiError
 import java.io.IOException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import net.openid.appauth.AuthorizationException
 import retrofit2.HttpException
 
 sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
@@ -29,7 +30,13 @@ suspend fun <T> apiCall(json: Json, block: suspend () -> T): T = try {
         else -> ApiFailure.Server(detail)
     }
 } catch (error: AccessTokenUnavailableException) {
-    throw error.cause
+    val cause = error.cause
+    // A token refresh that failed for network reasons is retryable, not an auth failure.
+    throw if (cause is AuthorizationException && cause.type == AuthorizationException.TYPE_GENERAL_ERROR) {
+        ApiFailure.Connectivity(error)
+    } else {
+        cause
+    }
 } catch (error: IOException) {
     throw ApiFailure.Connectivity(error)
 } catch (error: SerializationException) {

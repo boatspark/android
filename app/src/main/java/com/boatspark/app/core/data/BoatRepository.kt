@@ -15,7 +15,10 @@ import com.boatspark.app.core.model.UserProfile
 import com.boatspark.app.core.network.ApiFailure
 import com.boatspark.app.core.network.BoatSparkApi
 import com.boatspark.app.core.network.apiCall
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,17 +54,20 @@ class BoatRepository(
 
     fun status(boatId: Long): Flow<CachedValue<BoatStatus>?> =
         dao.observeStatus(boatId).map { entity ->
-            entity?.let {
-                CachedValue(json.decodeFromString<BoatStatus>(it.payload), it.refreshedAt)
-            }
-        }
+            entity?.let { cached -> decodeCached<BoatStatus>(cached.payload)?.let { CachedValue(it, cached.refreshedAt) } }
+        }.flowOn(Dispatchers.Default)
 
     fun alerts(boatId: Long): Flow<CachedValue<BoatAlerts>?> =
         dao.observeAlerts(boatId).map { entity ->
-            entity?.let {
-                CachedValue(json.decodeFromString<BoatAlerts>(it.payload), it.refreshedAt)
-            }
-        }
+            entity?.let { cached -> decodeCached<BoatAlerts>(cached.payload)?.let { CachedValue(it, cached.refreshedAt) } }
+        }.flowOn(Dispatchers.Default)
+
+    /** A payload cached by an older app version may no longer decode; treat it as not cached. */
+    private inline fun <reified T> decodeCached(payload: String): T? = try {
+        json.decodeFromString<T>(payload)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     suspend fun refreshUserAndBoats() = refreshMutex.withLock {
         authenticatedCall { generation ->
@@ -95,9 +101,24 @@ class BoatRepository(
         apiCall(json) { api.history(boatId) }
     }
 
+    /** Refreshes every boat, continuing past failures so one bad boat cannot starve the rest. */
     suspend fun refreshAll() {
         refreshUserAndBoats()
-        dao.getBoats().forEach { refreshBoat(it.id) }
+        var firstFailure: Exception? = null
+        for (boat in dao.getBoats()) {
+            try {
+                refreshBoat(boat.id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: AuthenticationRequiredException) {
+                throw error
+            } catch (error: ApiFailure.Authentication) {
+                throw error
+            } catch (error: Exception) {
+                if (firstFailure == null) firstFailure = error
+            }
+        }
+        firstFailure?.let { throw it }
     }
 
     suspend fun clear() = refreshMutex.withLock {

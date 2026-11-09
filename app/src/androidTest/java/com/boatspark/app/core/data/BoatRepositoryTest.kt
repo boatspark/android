@@ -5,11 +5,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.boatspark.app.core.auth.AuthenticationRequiredException
 import com.boatspark.app.core.auth.SessionAuthority
 import com.boatspark.app.core.database.BoatSparkDatabase
+import com.boatspark.app.core.database.BoatStatusEntity
+import com.boatspark.app.core.model.Boat
 import com.boatspark.app.core.model.BoatAlerts
 import com.boatspark.app.core.model.BoatHistory
 import com.boatspark.app.core.model.BoatList
 import com.boatspark.app.core.model.BoatStatus
 import com.boatspark.app.core.model.UserProfile
+import com.boatspark.app.core.network.AccessTokenUnavailableException
 import com.boatspark.app.core.network.ApiFailure
 import com.boatspark.app.core.network.BoatSparkApi
 import com.boatspark.app.core.network.BoatSparkJson
@@ -19,6 +22,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import net.openid.appauth.AuthorizationException
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Before
@@ -86,6 +90,33 @@ class BoatRepositoryTest {
         assertNull(repository.alerts(BOAT_ID).first())
     }
 
+    @Test
+    fun cachedPayloadThatNoLongerDecodesReadsAsNotCached() = runTest {
+        database.dao().saveStatus(BoatStatusEntity(BOAT_ID, "{\"unexpected\":true}", 0))
+
+        assertNull(repository.status(BOAT_ID).first())
+    }
+
+    @Test
+    fun refreshAllContinuesPastAFailingBoat() = runTest {
+        api.boatIds = listOf(1L, 2L)
+        api.statusFailuresByBoat[1L] = http(404)
+
+        assertFailsWith<ApiFailure.Server> { repository.refreshAll() }
+
+        assertNull(repository.status(1L).first())
+        assertNotNull(repository.status(2L).first())
+    }
+
+    @Test
+    fun tokenRefreshNetworkErrorIsReportedAsConnectivity() = runTest {
+        api.statusFailures += AccessTokenUnavailableException(
+            AuthorizationException.GeneralErrors.NETWORK_ERROR,
+        )
+
+        assertFailsWith<ApiFailure.Connectivity> { repository.refreshBoat(BOAT_ID) }
+    }
+
     private fun http(code: Int) = HttpException(Response.error<Any>(code, "".toResponseBody()))
 
     private class FakeSession : SessionAuthority {
@@ -104,13 +135,16 @@ class BoatRepositoryTest {
 
     private class FakeApi : BoatSparkApi {
         val statusFailures = ArrayDeque<Exception>()
+        val statusFailuresByBoat = mutableMapOf<Long, Exception>()
+        var boatIds = emptyList<Long>()
         var alertsFailure: Exception? = null
         var onStatus: () -> Unit = {}
 
         override suspend fun currentUser() = UserProfile(1, "a@example.com", true)
-        override suspend fun boats() = BoatList(emptyList())
+        override suspend fun boats() = BoatList(boatIds.map { Boat(it, "Boat $it", "device-$it", "2026-01-01T00:00:00Z") })
         override suspend fun status(boatId: Long): BoatStatus {
             statusFailures.removeFirstOrNull()?.let { throw it }
+            statusFailuresByBoat[boatId]?.let { throw it }
             onStatus()
             return BoatStatus(boatId, "Test Boat")
         }
