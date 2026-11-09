@@ -16,16 +16,21 @@ import com.boatspark.app.core.settings.SettingsRepository
 import com.boatspark.app.core.settings.StatusSection
 import com.boatspark.app.core.settings.TemperatureUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface HistoryState {
@@ -36,6 +41,7 @@ sealed interface HistoryState {
 
 data class MainUiState(
     val isRefreshing: Boolean = false,
+    val isStartingSignIn: Boolean = false,
     val message: String? = null,
 )
 
@@ -63,7 +69,17 @@ class MainViewModel(
     val expandedSections: StateFlow<Set<StatusSection>> = container.settingsRepository.expandedSections
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    private val historyBoatId = MutableStateFlow<Long?>(null)
+    // Only touched on the main thread.
+    private var historyBoatId: Long? = null
+    private var historyViewers = 0
+    private var historyJob: Job? = null
+    private var historyLoadedAt = 0L
+    private var refreshJob: Job? = null
+    private var refreshTarget: Long? = null
+
+    private val signInIntentChannel = Channel<Intent>(Channel.BUFFERED)
+    val signInIntents: Flow<Intent> = signInIntentChannel.receiveAsFlow()
+
     private val mutableHistory = MutableStateFlow<HistoryState?>(null)
     val history: StateFlow<HistoryState?> = mutableHistory.asStateFlow()
 
@@ -76,32 +92,55 @@ class MainViewModel(
                 when (state) {
                     AuthenticationState.SignedIn -> {
                         container.refreshScheduler.schedule()
-                        refreshNow()
+                        // Launched, not awaited, so the collector never misses a later sign-out.
+                        requestRefresh()
                     }
                     AuthenticationState.SignedOut,
                     is AuthenticationState.Error,
                     -> {
                         container.refreshScheduler.cancel()
+                        refreshJob?.cancel()
+                        historyJob?.cancel()
                         selectedBoatId.value = null
-                        historyBoatId.value = null
+                        historyBoatId = null
+                        historyLoadedAt = 0L
                         mutableHistory.value = null
-                        container.boatRepository.clear()
                         mutableUiState.value = MainUiState()
+                        container.boatRepository.clear()
                     }
                 }
             }
         }
     }
 
-    suspend fun createSignInIntent(): Intent = container.authRepository.createAuthorizationIntent()
+    fun startSignIn() {
+        if (mutableUiState.value.isStartingSignIn) return
+        mutableUiState.update { it.copy(isStartingSignIn = true) }
+        viewModelScope.launch {
+            try {
+                signInIntentChannel.send(container.authRepository.createAuthorizationIntent())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                showMessage(error.message ?: "Unable to start sign-in")
+            } finally {
+                mutableUiState.update { it.copy(isStartingSignIn = false) }
+            }
+        }
+    }
 
     fun completeSignIn(data: Intent) {
         viewModelScope.launch {
-            mutableUiState.value = MainUiState(isRefreshing = true)
+            mutableUiState.update { it.copy(isRefreshing = true, message = null) }
             // Never show a previous account's cache, even if its sign-out cleanup was skipped.
             container.boatRepository.clear()
             val result = container.authRepository.handleAuthorizationResult(data)
-            mutableUiState.value = MainUiState(message = result.exceptionOrNull()?.message)
+            mutableUiState.update {
+                it.copy(
+                    isRefreshing = refreshJob?.isActive == true,
+                    message = result.exceptionOrNull()?.message,
+                )
+            }
         }
     }
 
@@ -116,22 +155,36 @@ class MainViewModel(
     }
 
     fun refresh() {
-        viewModelScope.launch { refreshNow() }
-        historyBoatId.value?.let(::loadHistory)
+        requestRefresh()
+        if (historyViewers > 0) loadHistory()
     }
 
+    /** Called by each history screen as it appears; balanced by [closeHistory]. */
     fun openHistory(boatId: Long) {
-        if (historyBoatId.value != boatId) mutableHistory.value = null
-        historyBoatId.value = boatId
-        loadHistory(boatId)
+        historyViewers++
+        if (historyBoatId != boatId) {
+            historyJob?.cancel()
+            historyBoatId = boatId
+            historyLoadedAt = 0L
+            mutableHistory.value = null
+        }
+        if (!isHistoryFresh()) loadHistory()
     }
 
     fun closeHistory() {
-        historyBoatId.value = null
+        historyViewers = (historyViewers - 1).coerceAtLeast(0)
+        if (historyViewers == 0) historyJob?.cancel()
     }
 
-    private fun loadHistory(boatId: Long) {
-        viewModelScope.launch {
+    private fun isHistoryFresh(): Boolean =
+        mutableHistory.value is HistoryState.Loaded &&
+            System.currentTimeMillis() - historyLoadedAt < HISTORY_MAX_AGE_MS
+
+    private fun loadHistory() {
+        val boatId = historyBoatId ?: return
+        // Cancelling the previous load means an older response can never overwrite a newer one.
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
             if (mutableHistory.value !is HistoryState.Loaded) {
                 mutableHistory.value = HistoryState.Loading
             }
@@ -142,11 +195,13 @@ class MainViewModel(
             } catch (error: Exception) {
                 HistoryState.Failed(error.message ?: "History unavailable")
             }
-            if (historyBoatId.value == boatId) {
+            if (historyBoatId != boatId) return@launch
+            if (result is HistoryState.Loaded) {
+                mutableHistory.value = result
+                historyLoadedAt = System.currentTimeMillis()
+            } else if (mutableHistory.value !is HistoryState.Loaded) {
                 // Keep showing the previous graph if a background refresh fails.
-                if (result is HistoryState.Loaded || mutableHistory.value !is HistoryState.Loaded) {
-                    mutableHistory.value = result
-                }
+                mutableHistory.value = result
             }
         }
     }
@@ -156,11 +211,13 @@ class MainViewModel(
     }
 
     suspend fun pollWhileForeground() {
-        while (viewModelScope.isActive) {
+        while (true) {
             if (authentication.value == AuthenticationState.SignedIn) {
-                refreshNow()
+                // The refresh runs in viewModelScope, so leaving the foreground cannot cancel it midway.
+                requestRefresh()
+                if (historyViewers > 0 && !isHistoryFresh()) loadHistory()
             }
-            delay(60_000)
+            delay(POLL_INTERVAL_MS)
         }
     }
 
@@ -182,26 +239,51 @@ class MainViewModel(
         mutableUiState.value = mutableUiState.value.copy(message = null)
     }
 
-    private suspend fun refreshNow() {
-        if (authentication.value != AuthenticationState.SignedIn || mutableUiState.value.isRefreshing) {
-            return
+    /**
+     * Starts a refresh of the selected boat, or of the boat list when none is selected.
+     * A refresh already running for the same target is reused; one for a different target
+     * is replaced so a newly selected boat is never left waiting for the next poll.
+     */
+    private fun requestRefresh() {
+        if (authentication.value != AuthenticationState.SignedIn) return
+        val target = selectedBoatId.value ?: ALL_BOATS
+        val running = refreshJob
+        if (running != null && running.isActive) {
+            if (refreshTarget == target) return
+            running.cancel()
         }
-        mutableUiState.value = mutableUiState.value.copy(isRefreshing = true, message = null)
-        try {
-            val boatId = selectedBoatId.value
-            if (boatId == null) {
-                container.boatRepository.refreshUserAndBoats()
-            } else {
-                container.boatRepository.refreshBoat(boatId)
+        refreshTarget = target
+        lateinit var job: Job
+        job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            mutableUiState.update { it.copy(isRefreshing = true, message = null) }
+            var message: String? = null
+            try {
+                if (target == ALL_BOATS) {
+                    container.boatRepository.refreshUserAndBoats()
+                } else {
+                    container.boatRepository.refreshBoat(target)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: AuthenticationRequiredException) {
+                // The session ended; the sign-out handler resets the UI.
+            } catch (error: Exception) {
+                message = error.message ?: "Refresh failed"
+            } finally {
+                // A replaced refresh must not clear the indicator of its replacement.
+                if (refreshJob === job) {
+                    mutableUiState.update { it.copy(isRefreshing = false, message = message ?: it.message) }
+                }
             }
-            mutableUiState.value = mutableUiState.value.copy(isRefreshing = false)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: AuthenticationRequiredException) {
-            mutableUiState.value = MainUiState()
-        } catch (error: Exception) {
-            mutableUiState.value = MainUiState(message = error.message ?: "Refresh failed")
         }
+        refreshJob = job
+        job.start()
+    }
+
+    private companion object {
+        const val ALL_BOATS = -1L
+        const val POLL_INTERVAL_MS = 60_000L
+        const val HISTORY_MAX_AGE_MS = 5 * 60_000L
     }
 }
 

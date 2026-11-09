@@ -83,14 +83,14 @@ fun BoatSparkApp(
             }
             AuthenticationState.SignedOut -> {
                 SignInScreen(
-                    isLoading = uiState.isRefreshing,
+                    isLoading = uiState.isRefreshing || uiState.isStartingSignIn,
                     configurationError = null,
                     onSignIn = onSignIn,
                 )
             }
             is AuthenticationState.Error -> {
                 SignInScreen(
-                    isLoading = uiState.isRefreshing,
+                    isLoading = uiState.isRefreshing || uiState.isStartingSignIn,
                     configurationError = (authentication as AuthenticationState.Error).message,
                     onSignIn = onSignIn,
                 )
@@ -178,13 +178,13 @@ private fun AuthenticatedApp(
             composable(ROUTE_SENSOR) { entry ->
                 val boatId = entry.arguments?.getString("boatId")?.toLongOrNull()
                 val beaconId = entry.arguments?.getString("beaconId")?.toLongOrNull()
-                LaunchedEffect(boatId) {
+                DisposableEffect(boatId) {
                     boatId?.let {
                         viewModel.selectBoat(it)
                         viewModel.openHistory(it)
                     }
+                    onDispose { if (boatId != null) viewModel.closeHistory() }
                 }
-                DisposableEffect(Unit) { onDispose(viewModel::closeHistory) }
                 if (beaconId != null) {
                     SensorDetailScreen(
                         cachedStatus = status,
@@ -197,13 +197,13 @@ private fun AuthenticatedApp(
             composable(ROUTE_ELECTRICAL) { entry ->
                 val boatId = entry.arguments?.getString("boatId")?.toLongOrNull()
                 val metric = GpioMetric.fromRouteKey(entry.arguments?.getString("metric"))
-                LaunchedEffect(boatId) {
+                DisposableEffect(boatId) {
                     boatId?.let {
                         viewModel.selectBoat(it)
                         viewModel.openHistory(it)
                     }
+                    onDispose { if (boatId != null) viewModel.closeHistory() }
                 }
-                DisposableEffect(Unit) { onDispose(viewModel::closeHistory) }
                 if (metric != null) {
                     ElectricalDetailScreen(cachedStatus = status, metric = metric, history = history)
                 }

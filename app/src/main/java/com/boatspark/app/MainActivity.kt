@@ -35,18 +35,17 @@ class MainActivity : ComponentActivity() {
                 viewModel.pollWhileForeground()
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.signInIntents.collect(signInLauncher::launch)
+            }
+        }
 
         setContent {
             BoatSparkTheme {
                 BoatSparkApp(
                     viewModel = viewModel,
-                    onSignIn = {
-                        lifecycleScope.launch {
-                            runCatching { viewModel.createSignInIntent() }
-                                .onSuccess(signInLauncher::launch)
-                                .onFailure { viewModel.showMessage(it.message ?: "Unable to start sign-in") }
-                        }
-                    },
+                    onSignIn = viewModel::startSignIn,
                 )
             }
         }
